@@ -1,10 +1,15 @@
 # Reusable: checks the calling repository's Claude configuration stays within its limits
 # (CLAUDE.md at most 100 lines; each .claude/rules/*.md at most 80 lines with `paths:`).
-# Called from each repository's claude-md-check.yml.
-name: CLAUDE.md check (reusable)
+# Called from each repository's claude-md-check.yml, and runs on this repository too.
+name: CLAUDE.md check
 
 on:
   workflow_call:
+  push:
+    branches: [main]
+    paths: ["CLAUDE.md", ".claude/**", "scripts/claude_md_check.py", ".github/workflows/claude-md-check.yml"]
+  pull_request:
+    paths: ["CLAUDE.md", ".claude/**", "scripts/claude_md_check.py", ".github/workflows/claude-md-check.yml"]
 
 permissions: {}
 

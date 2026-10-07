@@ -9,8 +9,9 @@ Organization-wide files for **Stella Rain**:
   API, so they work through issues and labels, and read a snapshot (`STATUS.md` on the `status`
   branch of the app repository).
 - The **CLAUDE.md check**: `scripts/claude_md_check.py` and the reusable workflow
-  `.github/workflows/claude-md-check.yml`, called from `app` and `core`. It fails when
-  `CLAUDE.md` passes 100 lines, or a `.claude/rules/*.md` file passes 80 lines or has no `paths:`.
+  `.github/workflows/claude-md-check.yml`, called from `app`, `core` and `moderation` and run
+  here. It fails when `CLAUDE.md` passes 100 lines, or a `.claude/rules/*.md` file passes
+  80 lines or has no `paths:`.
 - The **line-ending check**: the workflow `.github/workflows/eol-check.yml`, run here and called
   from `app` and `core`. It fails if `.gitattributes` loses `* text=auto eol=lf` or a file with
   CRLF endings is committed.
