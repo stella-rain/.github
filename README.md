@@ -8,6 +8,9 @@ Organization-wide files for **Stella Rain**:
   command labels such as `cmd:status-now`. Claude Code cloud sessions cannot reach the Project
   API, so they work through issues and labels, and read a snapshot (`STATUS.md` on the `status`
   branch of the app repository).
+- The **CLAUDE.md check**: `scripts/claude_md_check.py` and the reusable workflow
+  `.github/workflows/claude-md-check.yml`, called from `app` and `core`. It fails when
+  `CLAUDE.md` passes 100 lines, or a `.claude/rules/*.md` file passes 80 lines or has no `paths:`.
 
 This repository holds no project data. Its Actions logs are public, so the bridge never prints
 issue titles.

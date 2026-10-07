@@ -1,0 +1,34 @@
+# Reusable: checks the calling repository's Claude configuration stays within its limits
+# (CLAUDE.md at most 100 lines; each .claude/rules/*.md at most 80 lines with `paths:`).
+# Called from each repository's claude-md-check.yml.
+name: CLAUDE.md check (reusable)
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  check:
+    name: CLAUDE.md and rules within limits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v7
+        with:
+          path: repo
+          persist-credentials: false
+
+      - name: Check out the check script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .check
+          persist-credentials: false
+
+      - name: Check
+        run: python3 .check/scripts/claude_md_check.py repo
