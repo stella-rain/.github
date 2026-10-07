@@ -1,0 +1,59 @@
+# Reusable: adds an issue to the Stella Rain organization Project and applies its
+# command labels (ADR-031). Called from each synced repository's project-sync.yml.
+#
+# Needs, as organization (or caller repository) settings:
+#   vars.PROJECT_NUMBER           the Project's number
+#   vars.BRIDGE_APP_CLIENT_ID     client ID of the stella-rain-bridge GitHub App
+#   secrets.BRIDGE_APP_PRIVATE_KEY  its private key (callers pass it with `secrets: inherit`)
+#
+# This runs in public repositories too, so the script never prints issue titles.
+name: Project sync (reusable)
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  sync:
+    name: sync issue to Project
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write  # remove applied command labels; read the sender's permission
+    concurrency:
+      group: project-sync-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the bridge script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .bridge
+          persist-credentials: false
+
+      - name: Get a Project token from the bridge App
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BRIDGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-organization-projects: write
+          permission-issues: read
+
+      - name: Sync
+        env:
+          PROJECT_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ORG: ${{ github.repository_owner }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+          SENDER: ${{ github.event.sender.login }}
+        run: python3 .bridge/scripts/project_bridge.py sync

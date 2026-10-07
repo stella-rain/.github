@@ -1,0 +1,21 @@
+name: Bug
+description: Something does not work as intended
+type: Bug
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: For gameplay bugs, attach the event recording (ADR-016) if you have one.
