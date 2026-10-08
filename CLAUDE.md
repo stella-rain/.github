@@ -10,11 +10,13 @@ Follow the `kade-workflow` skill; where it and this file differ, this file wins.
 |---|---|
 | `scripts/project_bridge.py` | Bridge: `sync` (issue event to Project fields) and `snapshot` (Project to `STATUS.md`) |
 | `scripts/claude_md_check.py` | `CLAUDE.md` at most 100 lines; `.claude/rules/*.md` at most 80 lines with `paths:` |
-| `scripts/test_*.py` | Unit tests for both scripts |
+| `scripts/auto_merge_gate.py` | Auto-merge verdict from a commit's check runs and statuses: `merge`, `wait` or `stop` |
+| `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
 | `.github/workflows/claude-md-check.yml` | Reusable: called by `app`, `core`, `moderation` and this repo |
 | `.github/workflows/eol-check.yml` | Reusable, and runs here: LF line endings |
+| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main` |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 
@@ -47,6 +49,7 @@ Follow the `kade-workflow` skill; where it and this file differ, this file wins.
 - **Local sessions** (on Kade's PC): the remote file tools cannot write anywhere in this
   repository and git cannot commit here from them. Deliver every file as a zip laid out from
   the `stella-rain` root, with the commit command for Kade to run.
-- **Cloud sessions**: branch `claude/<task>` and a PR; Kade merges.
+- **Cloud sessions**: branch `claude/<task>` and a PR; Kade merges. No auto-merge here, unlike
+  `app` and `core`: a merge here reaches every caller at once.
 - Author: `Kade <23338687+enjay27@users.noreply.github.com>`. No other email in commits or git config.
 - Push this repository before the callers when they depend on a change here.
