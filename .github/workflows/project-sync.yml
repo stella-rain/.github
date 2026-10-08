@@ -4,13 +4,19 @@
 # Needs, as organization (or caller repository) settings:
 #   vars.PROJECT_NUMBER           the Project's number
 #   vars.BRIDGE_APP_CLIENT_ID     client ID of the stella-rain-bridge GitHub App
-#   secrets.BRIDGE_APP_PRIVATE_KEY  its private key (callers pass it with `secrets: inherit`)
+#   secrets.BRIDGE_APP_PRIVATE_KEY  its private key. A caller in the same organization passes it
+#     with `secrets: inherit`; `inherit` does not cross organizations, so a caller in another one
+#     (star-resonance) passes it by name: `secrets: {BRIDGE_APP_PRIVATE_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}}`
 #
 # This runs in public repositories too, so the script never prints issue titles.
 name: Project sync (reusable)
 
 on:
   workflow_call:
+    secrets:
+      BRIDGE_APP_PRIVATE_KEY:
+        required: false
+        description: The bridge GitHub App's private key (see above)
 
 permissions: {}
 

@@ -58,8 +58,10 @@ for `star-resonance` (Resonance: `resonance-stream`, `resonance-lab`).
    secret `BRIDGE_APP_PRIVATE_KEY` (`gh secret set BRIDGE_APP_PRIVATE_KEY --org <org> --visibility
    selected --repos <repo>,<repo> < key.pem`); delete the key file afterwards.
 5. **Each repository** gets `.github/workflows/project-sync.yml` (the caller of
-   `stella-rain/.github/.github/workflows/project-sync.yml@main` with `secrets: inherit`); one of
-   them also gets `project-snapshot.yml`. Both are skipped while `PROJECT_NUMBER` is unset.
+   `stella-rain/.github/.github/workflows/project-sync.yml@main`); one of them also gets
+   `project-snapshot.yml`. The caller passes the key by name,
+   `secrets: {BRIDGE_APP_PRIVATE_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}}`: `secrets: inherit`
+   does not cross organizations (the first test of star-resonance failed on it). Both are skipped while `PROJECT_NUMBER` is unset.
 6. **Browser:** the views and the Project's built-in workflows (item closed: Done; pull request
    merged: Done; item added: Backlog), as in the runbook; GitHub has no API for views.
 
