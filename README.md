@@ -35,6 +35,37 @@ A decision that is the maintainer's has no label: the issue is assigned to the m
 it is closed or unassigned. A check that needs a machine or a device is a *Needs …* Verification
 value, listed in its own section until it is set to *Verified*.
 
+## Another organization (a second bridge)
+
+The bridge code is shared; only the organization, its Project and its GitHub App are new. Used
+for `star-resonance` (Resonance: `resonance-stream`, `resonance-lab`).
+
+1. **Browser:** create the organization (Free plan). Create a GitHub App owned by it, named for
+   the project (for example `resonance-bridge`), with the same settings as in the runbook
+   (`app/docs/setup/project-bridge-setup.md`, step 5): webhook off; Issues, Pull requests and
+   Metadata read-only; organization Projects read and write; installed only on that organization,
+   on the synced repositories. Generate a private key and note the Client ID. An app cannot be
+   shared across organizations unless it is public, so each organization has its own.
+2. **gh (needs the `project` scope):**
+   `ORG=<org> TITLE=<Title> SYNCED_REPOS="<repo> <repo>" PHASES="" bash scripts/setup-project.sh`.
+   `PHASES=""` means no Phase field; leave it unset for Stella Rain's five. The last step of the
+   script sets the organization variable `PROJECT_NUMBER` and needs the `admin:org` scope
+   (`gh auth refresh -h github.com -s admin:org`).
+3. **Status options:** `Backlog, Next, Now, In review, Done`, in that order. The bridge looks them
+   up by name. Rename the built-in ones (their ids keep the built-in workflows): the GraphQL
+   mutation `updateProjectV2Field` with the existing option ids does it without the browser.
+4. **Variable and secret, by Kade:** organization variable `BRIDGE_APP_CLIENT_ID`, organization
+   secret `BRIDGE_APP_PRIVATE_KEY` (`gh secret set BRIDGE_APP_PRIVATE_KEY --org <org> --visibility
+   selected --repos <repo>,<repo> < key.pem`); delete the key file afterwards.
+5. **Each repository** gets `.github/workflows/project-sync.yml` (the caller of
+   `stella-rain/.github/.github/workflows/project-sync.yml@main` with `secrets: inherit`); one of
+   them also gets `project-snapshot.yml`. Both are skipped while `PROJECT_NUMBER` is unset.
+6. **Browser:** the views and the Project's built-in workflows (item closed: Done; pull request
+   merged: Done; item added: Backlog), as in the runbook; GitHub has no API for views.
+
+The snapshot of a public repository lists the titles of its issues. Draft items must never be
+added to such a Project.
+
 ## Run locally
 
 ```bash
