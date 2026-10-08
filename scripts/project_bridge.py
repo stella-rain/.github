@@ -51,7 +51,11 @@ PHASE_OPTIONS = [
     "P3 Closed test",
     "P4 Ads",
 ]
-VERIFICATION_OPTIONS = ["Verified", "NOT VERIFIED", "Needs Kade"]
+# A check that cannot run in a cloud session or in CI waits for a machine or a device. A
+# decision is not a verification: it is an issue assigned to a maintainer (MAINTAINERS).
+VERIFICATION_ENVIRONMENTS = ["Needs Windows", "Needs macOS", "Needs Android device", "Needs iPhone"]
+VERIFICATION_OPTIONS = ["Verified", "NOT VERIFIED"] + VERIFICATION_ENVIRONMENTS
+MAINTAINERS = {"enjay27"}
 PRIORITY_OPTIONS = ["P1", "P2", "P3"]
 
 # cmd:<suffix>  ->  (field, option)
@@ -68,7 +72,10 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "phase-p4": (FIELD_PHASE, PHASE_OPTIONS[4]),
     "verify-verified": (FIELD_VERIFICATION, "Verified"),
     "verify-not-verified": (FIELD_VERIFICATION, "NOT VERIFIED"),
-    "verify-needs-kade": (FIELD_VERIFICATION, "Needs Kade"),
+    "verify-needs-windows": (FIELD_VERIFICATION, "Needs Windows"),
+    "verify-needs-macos": (FIELD_VERIFICATION, "Needs macOS"),
+    "verify-needs-android": (FIELD_VERIFICATION, "Needs Android device"),
+    "verify-needs-iphone": (FIELD_VERIFICATION, "Needs iPhone"),
     "priority-p1": (FIELD_PRIORITY, "P1"),
     "priority-p2": (FIELD_PRIORITY, "P2"),
     "priority-p3": (FIELD_PRIORITY, "P3"),
@@ -230,8 +237,8 @@ query($org: String!, $number: Int!, $cursor: String) {
           }
           content {
             __typename
-            ... on Issue { number title url state repository { name } }
-            ... on PullRequest { number title url state repository { name } }
+            ... on Issue { number title url state repository { name } assignees(first: 5) { nodes { login } } }
+            ... on PullRequest { number title url state repository { name } assignees(first: 5) { nodes { login } } }
             ... on DraftIssue { title }
           }
         }
@@ -341,6 +348,7 @@ class Item:
     url: str
     state: str  # OPEN, CLOSED, MERGED, or DRAFT for draft items
     values: dict[str, str]
+    assignees: list[str] = field(default_factory=list)
 
     @property
     def status(self) -> str:
@@ -349,6 +357,11 @@ class Item:
     @property
     def is_open(self) -> bool:
         return self.state in ("OPEN", "DRAFT") and self.status != "Done"
+
+    @property
+    def waits_on_maintainer(self) -> bool:
+        """An open item assigned to a maintainer is waiting for their decision."""
+        return self.is_open and any(login in MAINTAINERS for login in self.assignees)
 
     def ref(self) -> str:
         if self.kind == "DraftIssue":
@@ -384,6 +397,7 @@ def parse_items(pages: list[dict]) -> list[Item]:
                     url=content.get("url", ""),
                     state=content.get("state") or "DRAFT",
                     values=values,
+                    assignees=[a["login"] for a in (content.get("assignees") or {}).get("nodes", []) if a],
                 )
             )
     return items
@@ -454,9 +468,11 @@ def render_status(items: list[Item], project_title: str, generated: dt.datetime,
     ]
     lines += _section("Now", [i for i in open_items if i.status == "Now"])
     lines += _section("In review", [i for i in open_items if i.status == "In review"])
+    lines += _section("Waiting on Kade", [i for i in items if i.waits_on_maintainer])
     # Verification is independent of Status: closing an issue moves it to Done, but it stays
-    # here until Kade sets Verification to Verified.
-    lines += _section("Needs Kade", [i for i in items if i.values.get(FIELD_VERIFICATION) == "Needs Kade"])
+    # here until Kade has run the check and sets Verification to Verified.
+    for environment in VERIFICATION_ENVIRONMENTS:
+        lines += _section(environment, [i for i in items if i.values.get(FIELD_VERIFICATION) == environment])
     lines += _section(
         "NOT VERIFIED", [i for i in items if i.values.get(FIELD_VERIFICATION) == "NOT VERIFIED"], limit=30
     )

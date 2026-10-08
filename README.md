@@ -25,10 +25,15 @@ issue titles.
 |---|---|
 | `cmd:status-backlog` · `-next` · `-now` · `-in-review` · `-done` | Status |
 | `cmd:phase-p0` … `cmd:phase-p4` | Phase |
-| `cmd:verify-verified` · `-not-verified` · `-needs-kade` | Verification |
+| `cmd:verify-verified` · `-not-verified` · `-needs-windows` · `-needs-macos` · `-needs-android` · `-needs-iphone` | Verification |
 | `cmd:priority-p1` … `cmd:priority-p3` | Priority |
 
 A command label is applied only when the person who added it has write access, then removed.
+
+A decision that is the maintainer's has no label: the issue is assigned to the maintainer
+(`MAINTAINERS` in `project_bridge.py`) and the snapshot lists it under *Waiting on Kade* until
+it is closed or unassigned. A check that needs a machine or a device is a *Needs …* Verification
+value, listed in its own section until it is set to *Verified*.
 
 ## Run locally
 

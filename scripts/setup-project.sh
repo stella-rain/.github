@@ -8,7 +8,9 @@
 #   bash scripts/setup-project.sh                 # safe to re-run; it skips what exists
 #
 # Not automated (the API cannot do it): the Status options, the views, and the Project's
-# built-in workflows. The setup runbook in the app repo lists those clicks.
+# built-in workflows. The setup runbook in the app repo lists those clicks. A field that
+# exists is skipped, so changing the options of an existing field (for example Verification)
+# is also a click: rename an option in the Project's field settings to keep its items.
 set -euo pipefail
 
 ORG=${ORG:-stella-rain}
@@ -46,7 +48,7 @@ add_date() {
   echo "created: $1"
 }
 add_select "Phase" "P0 Android spike,P1 Vertical slice,P2 Editor + replay + publish,P3 Closed test,P4 Ads"
-add_select "Verification" "Verified,NOT VERIFIED,Needs Kade"
+add_select "Verification" "Verified,NOT VERIFIED,Needs Windows,Needs macOS,Needs Android device,Needs iPhone"
 add_select "Priority" "P1,P2,P3"
 add_date "Start"
 add_date "Target"
@@ -65,7 +67,11 @@ for repo in $SYNCED_REPOS; do
   done
   label "$repo" "cmd:verify-verified" "0E8A16" "Bridge command: Verification = Verified"
   label "$repo" "cmd:verify-not-verified" "FBCA04" "Bridge command: Verification = NOT VERIFIED"
-  label "$repo" "cmd:verify-needs-kade" "D93F0B" "Bridge command: Verification = Needs Kade"
+  for env in windows:Windows macos:macOS android:"Android device" iphone:iPhone; do
+    label "$repo" "cmd:verify-needs-${env%%:*}" "D93F0B" "Bridge command: Verification = Needs ${env#*:}"
+  done
+  # Replaced by the four labels above: a decision is an issue assigned to a maintainer.
+  gh label delete "cmd:verify-needs-kade" --repo "$ORG/$repo" --yes >/dev/null 2>&1 || true
   for p in 1 2 3; do
     label "$repo" "cmd:priority-p$p" "BFDADC" "Bridge command: set Project Priority (removed once applied)"
   done
@@ -81,7 +87,7 @@ cat <<NEXT
 
 Done. Still to do by hand (see app/docs/setup/project-bridge-setup.md):
   1. Status options: Backlog, Next, Now, In review, Done
-  2. Views: Board, Roadmap, Needs Kade, NOT VERIFIED, one per repository
+  2. Views: Board, Roadmap, Waiting on Kade, one per Needs option, NOT VERIFIED, one per repository
   3. Built-in workflows: item closed -> Done, pull request merged -> Done, auto-archive
   4. The stella-rain-bridge GitHub App, its client ID variable and private key secret
 Project URL: https://github.com/orgs/$ORG/projects/$number

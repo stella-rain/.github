@@ -9,8 +9,9 @@
 ## NOT VERIFIED
 
 <!-- What could not be run here and why (e.g. "Android export: no device in this session").
-     Write "nothing" if everything was verified. If something needs Kade, also add the
-     cmd:verify-needs-kade label to the issue. -->
+     Write "nothing" if everything was verified. If a check needs a machine or a device, also
+     add cmd:verify-needs-windows, -macos, -android or -iphone to the issue. A decision that
+     is Kade's: assign the issue to him, no label. -->
 
 ## Wrong turns
 
