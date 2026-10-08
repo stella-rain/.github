@@ -33,6 +33,7 @@ Follow the `kade-workflow` skill; where it and this file differ, this file wins.
 - `stage-template` must never call workflows from here: creators copy it.
 - The PR template's sections (*What changed and why*, *Verified*, *NOT VERIFIED*,
   *Wrong turns*) are what `kade-workflow` relies on; change them together.
+- New module, crate or dependency: decide it with Kade first (options, trade-offs for long-term release maintainability, your recommendation).
 
 ## Gates
 
