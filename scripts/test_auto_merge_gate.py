@@ -73,5 +73,30 @@ class CommitStatuses(unittest.TestCase):
         self.assertEqual(gate.decide([run("eol")], NO_STATUSES), "merge")
 
 
+def ref(owner, name, number):
+    return {"number": number, "repository": {"name": name, "owner": {"login": owner}}}
+
+
+class IssuesToClose(unittest.TestCase):
+    def test_same_repository_issues_are_closed_in_order(self):
+        refs = [ref("stella-rain", "app", 9), ref("stella-rain", "app", 4)]
+        self.assertEqual(gate.issues_to_close(refs, "stella-rain/app"), [4, 9])
+
+    def test_issues_in_other_repositories_are_left_alone(self):
+        refs = [ref("stella-rain", "core", 5), ref("stella-rain", "app", 4)]
+        self.assertEqual(gate.issues_to_close(refs, "stella-rain/app"), [4])
+
+    def test_repository_names_compare_without_case(self):
+        refs = [ref("Stella-Rain", "App", 4)]
+        self.assertEqual(gate.issues_to_close(refs, "stella-rain/app"), [4])
+
+    def test_duplicates_are_closed_once(self):
+        refs = [ref("stella-rain", "app", 4), ref("stella-rain", "app", 4)]
+        self.assertEqual(gate.issues_to_close(refs, "stella-rain/app"), [4])
+
+    def test_no_references_closes_nothing(self):
+        self.assertEqual(gate.issues_to_close([], "stella-rain/app"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ Follow the `kade-workflow` skill; where it and this file differ, this file wins.
 |---|---|
 | `scripts/project_bridge.py` | Bridge: `sync` (issue event to Project fields) and `snapshot` (Project to `STATUS.md`) |
 | `scripts/claude_md_check.py` | `CLAUDE.md` at most 100 lines; `.claude/rules/*.md` at most 80 lines with `paths:` |
-| `scripts/auto_merge_gate.py` | Auto-merge verdict from a commit's check runs and statuses: `merge`, `wait` or `stop` |
+| `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks; the issues a merged PR closes |
 | `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
