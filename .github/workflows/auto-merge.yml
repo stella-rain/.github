@@ -3,6 +3,8 @@
 # on `workflow_run` (completed) of each of their checks; the run that finds the last check
 # green merges. Anything else is left for a person: a failed or cancelled check, another
 # branch prefix, a fork, a stale run, a pull request into any other branch.
+# A merge made with GITHUB_TOKEN does not apply closing keywords (`Closes #N`), so after
+# merging it closes the PR's closing issues in the same repository itself.
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
 # auto-merge.yml takes effect once it is on main. Merges use the caller's GITHUB_TOKEN,
 # so they start no `push` run on main; the pull request's own runs are the gate.
@@ -27,6 +29,7 @@ jobs:
     permissions:
       contents: write       # merge, delete the branch
       pull-requests: write  # merge
+      issues: write         # close the PR's closing issues
       checks: read          # the head commit's check runs
       statuses: read        # the head commit's commit statuses
     concurrency:
@@ -70,3 +73,8 @@ jobs:
             claude/*) gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;
             *) echo "not a claude/* branch; leaving $BRANCH" ;;
           esac
+          gh pr view "$number" --repo "$REPO" --json closingIssuesReferences \
+            --jq .closingIssuesReferences > "$RUNNER_TEMP/closing.json"
+          for issue in $(python3 .bridge/scripts/auto_merge_gate.py --issues-to-close "$RUNNER_TEMP/closing.json" "$REPO"); do
+            gh issue close "$issue" --repo "$REPO" --reason completed --comment "Closed by #$number (auto-merge)."
+          done

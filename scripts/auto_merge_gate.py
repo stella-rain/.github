@@ -11,6 +11,11 @@ them) and prints one word:
 Usage: python3 auto_merge_gate.py CHECK_RUNS_JSON COMBINED_STATUS_JSON
 CHECK_RUNS_JSON is a JSON array of check runs; COMBINED_STATUS_JSON is the object from
 `GET /repos/{repo}/commits/{sha}/status`. Prints names and conclusions only, never titles.
+
+After a merge: python3 auto_merge_gate.py --issues-to-close REFS_JSON OWNER/REPO
+REFS_JSON is the PR's `closingIssuesReferences` (from `gh pr view --json`); prints the
+issue numbers in OWNER/REPO to close, one per line. A merge made with GITHUB_TOKEN does not
+apply closing keywords, so the workflow closes them itself.
 """
 
 import json
@@ -37,7 +42,25 @@ def decide(check_runs, combined_status):
     return "merge"
 
 
+def issues_to_close(refs, repo):
+    """Numbers of the referenced issues that live in `repo` (owner/name), sorted, unique."""
+    wanted = repo.lower()
+    numbers = set()
+    for r in refs:
+        repository = r.get("repository") or {}
+        full = f"{(repository.get('owner') or {}).get('login', '')}/{repository.get('name', '')}"
+        if full.lower() == wanted:
+            numbers.add(r["number"])
+    return sorted(numbers)
+
+
 def main(argv):
+    if len(argv) == 4 and argv[1] == "--issues-to-close":
+        with open(argv[2], encoding="utf-8") as f:
+            refs = json.load(f)
+        for number in issues_to_close(refs, argv[3]):
+            print(number)
+        return 0
     if len(argv) != 3:
         print(__doc__.strip().splitlines()[0], file=sys.stderr)
         return 2
