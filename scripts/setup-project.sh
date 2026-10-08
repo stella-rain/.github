@@ -16,10 +16,25 @@ set -euo pipefail
 ORG=${ORG:-stella-rain}
 TITLE=${TITLE:-"Stella Rain"}
 SYNCED_REPOS=${SYNCED_REPOS:-"app core"}
+# Phase options, comma separated. Unset: Stella Rain's. Set to empty: the project has no Phase
+# field and no cmd:phase-* labels. The nth option is set by cmd:phase-p<n-1>.
+PHASES=${PHASES-"P0 Android spike,P1 Vertical slice,P2 Editor + replay + publish,P3 Closed test,P4 Ads"}
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1" >&2; exit 1; }; }
-need gh
 need jq
+if [ -n "${DRY_RUN:-}" ]; then
+  # DRY_RUN is a file: every gh command is appended to it and nothing is changed (the tests).
+  gh() {
+    echo "gh $*" >> "$DRY_RUN"
+    case "$1 $2" in
+      "project list") echo '{"projects":[]}' ;;
+      "project create") echo '{"number":9}' ;;
+      "project field-list") echo '{"fields":[]}' ;;
+    esac
+  }
+else
+  need gh
+fi
 
 echo "== Project"
 number=$(gh project list --owner "$ORG" --format json --limit 100 \
@@ -32,7 +47,7 @@ else
 fi
 gh project edit "$number" --owner "$ORG" --visibility PRIVATE >/dev/null
 gh project edit "$number" --owner "$ORG" \
-  --description "Issues and roadmap for every Stella Rain repository (ADR-031)" >/dev/null
+  --description "Issues and roadmap for every $TITLE repository" >/dev/null
 
 echo "== Fields"
 existing=$(gh project field-list "$number" --owner "$ORG" --format json --limit 100 | jq -r '.fields[].name')
@@ -47,7 +62,7 @@ add_date() {
   gh project field-create "$number" --owner "$ORG" --name "$1" --data-type DATE >/dev/null
   echo "created: $1"
 }
-add_select "Phase" "P0 Android spike,P1 Vertical slice,P2 Editor + replay + publish,P3 Closed test,P4 Ads"
+if [ -n "$PHASES" ]; then add_select "Phase" "$PHASES"; fi
 add_select "Verification" "Verified,NOT VERIFIED,Needs Windows,Needs macOS,Needs Android device,Needs iPhone"
 add_select "Priority" "P1,P2,P3"
 add_date "Start"
@@ -62,9 +77,13 @@ for repo in $SYNCED_REPOS; do
   for s in backlog next now in-review "done"; do
     label "$repo" "cmd:status-$s" "C5DEF5" "Bridge command: set Project Status (removed once applied)"
   done
-  for p in 0 1 2 3 4; do
-    label "$repo" "cmd:phase-p$p" "D4C5F9" "Bridge command: set Project Phase (removed once applied)"
-  done
+  if [ -n "$PHASES" ]; then
+    phase_count=$(tr ',' '
+' <<<"$PHASES" | wc -l)
+    for ((p = 0; p < phase_count; p++)); do
+      label "$repo" "cmd:phase-p$p" "D4C5F9" "Bridge command: set Project Phase (removed once applied)"
+    done
+  fi
   label "$repo" "cmd:verify-verified" "0E8A16" "Bridge command: Verification = Verified"
   label "$repo" "cmd:verify-not-verified" "FBCA04" "Bridge command: Verification = NOT VERIFIED"
   for env in windows:Windows macos:macOS android:"Android device" iphone:iPhone; do
