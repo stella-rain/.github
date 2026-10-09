@@ -3,7 +3,7 @@
 Organization-wide files for **Stella Rain**:
 
 - Default issue forms and the pull request template for every repository that has none of its own.
-- The **Project bridge** (ADR-031): `scripts/project_bridge.py` and the reusable workflow
+- The **Project bridge** (ADR-044): `scripts/project_bridge.py` and the reusable workflow
   `.github/workflows/project-sync.yml`, which add issues to the organization Project and apply
   command labels such as `cmd:status-now`. Claude Code cloud sessions cannot reach the Project
   API, so they work through issues and labels, and read a snapshot (`STATUS.md` on the `status`

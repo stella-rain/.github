@@ -1,5 +1,5 @@
 # Reusable: adds an issue to the Stella Rain organization Project and applies its
-# command labels (ADR-031). Called from each synced repository's project-sync.yml.
+# command labels (ADR-044). Called from each synced repository's project-sync.yml.
 #
 # Needs, as organization (or caller repository) settings:
 #   vars.PROJECT_NUMBER           the Project's number
