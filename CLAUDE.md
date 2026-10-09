@@ -36,7 +36,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | Part | Gate |
 |---|---|
 | `scripts/` | `python3 -m unittest discover -s scripts -v` (CI: `test.yml`) |
-| Bridge against the real Project | Kade: `check-setup.ps1` in `app`, or a test issue with a `cmd:` label |
+| Bridge against the real Project | Kade: `scripts/check_setup.py` in `app`, or a test issue with a `cmd:` label |
 | Workflows | YAML parses; NOT VERIFIED until they have run on GitHub |
 | `CLAUDE.md`, line endings | `claude_md_check.py .`; CI `eol-check` |
 
