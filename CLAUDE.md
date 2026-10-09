@@ -1,6 +1,6 @@
 # Stella Rain: organization `.github`
 
-Public organization-wide files for Stella Rain: the Project bridge (ADR-031), the shared CI
+Public organization-wide files for Stella Rain: the Project bridge (ADR-044), the shared CI
 checks, and the default issue forms and pull request template. It holds no project data.
 
 ## Layout
@@ -26,7 +26,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 - **Callers use `@main`.** A change merged here applies to every calling repository on its
   next run. Keep inputs, outputs and behaviour backward compatible, or change the callers in
   the same task.
-- Command labels are honoured only from people with write access (ADR-031); never relax that.
+- Command labels are honoured only from people with write access (ADR-044); never relax that.
 - `stage-template` must never call workflows from here: creators copy it.
 - The PR template's sections (*What changed and why*, *Verified*, *NOT VERIFIED*,
   *Wrong turns*) are what `repo-workflow` relies on; change them together.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of the Stella Rain organization Project and command labels (ADR-031).
+# One-time setup of the Stella Rain organization Project and command labels (ADR-044).
 #
 # Run from local Claude Code or a terminal with your own gh login. Cloud sessions cannot
 # do this: they have no access to the Project API.

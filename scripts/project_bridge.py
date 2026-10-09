@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge between issues and the Stella Rain organization Project (ADR-031).
+"""Bridge between issues and the Stella Rain organization Project (ADR-044).
 
 Two commands:
 
@@ -463,7 +463,7 @@ def render_status(items: list[Item], project_title: str, generated: dt.datetime,
         f"# Status: {project_title}",
         "",
         f"Generated {stamp} ({kst}) from the organization Project {where} by `project-snapshot`.",
-        "Do not edit: change the Project, or add a `cmd:` label to an issue (ADR-031).",
+        "Do not edit: change the Project, or add a `cmd:` label to an issue (ADR-044).",
         "",
     ]
     lines += _section("Now", [i for i in open_items if i.status == "Now"])
