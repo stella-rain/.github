@@ -43,9 +43,9 @@ checks, and the default issue forms and pull request template. It holds no proje
 ## State and version control
 
 - Work on this repository is tracked in `stella-rain/app` issues (only `app` and `core` sync).
-- **Local sessions** (on Kade's PC): the remote file tools cannot write anywhere in this
-  repository and git cannot commit here from them. Deliver every file as a zip laid out from
-  the `stella-rain` root, with the commit command for Kade to run.
+- **Local sessions** (on Kade's PC or Mac): on the Windows PC the remote file tools cannot
+  write anywhere in this repository and git cannot commit here from them. Deliver every file
+  there as a zip laid out from the `stella-rain` root, with the commit command for Kade to run.
 - Push this repository before the callers when they depend on a change here.
 
 ## Overrides of global rules
