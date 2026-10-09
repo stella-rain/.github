@@ -29,7 +29,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 - Command labels are honoured only from people with write access (ADR-031); never relax that.
 - `stage-template` must never call workflows from here: creators copy it.
 - The PR template's sections (*What changed and why*, *Verified*, *NOT VERIFIED*,
-  *Wrong turns*) are what `kade-workflow` relies on; change them together.
+  *Wrong turns*) are what `repo-workflow` relies on; change them together.
 
 ## Gates
 
