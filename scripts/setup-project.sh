@@ -18,7 +18,7 @@ TITLE=${TITLE:-"Stella Rain"}
 SYNCED_REPOS=${SYNCED_REPOS:-"app core"}
 # Phase options, comma separated. Unset: Stella Rain's. Set to empty: the project has no Phase
 # field and no cmd:phase-* labels. The nth option is set by cmd:phase-p<n-1>.
-PHASES=${PHASES-"P0 Android spike,P1 Vertical slice,P2 Editor + replay + publish,P3 Closed test,P4 Ads"}
+PHASES=${PHASES-"P0 Android spike,P1 Playable run,P2 Weapons + progression,P3 Closed test,P4 Ads"}
 
 need() { command -v "$1" >/dev/null || { echo "missing: $1" >&2; exit 1; }; }
 need jq

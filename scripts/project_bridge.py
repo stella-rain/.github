@@ -46,8 +46,8 @@ FIELD_TARGET = "Target"
 STATUS_OPTIONS = ["Backlog", "Next", "Now", "In review", "Done"]
 PHASE_OPTIONS = [
     "P0 Android spike",
-    "P1 Vertical slice",
-    "P2 Editor + replay + publish",
+    "P1 Playable run",
+    "P2 Weapons + progression",
     "P3 Closed test",
     "P4 Ads",
 ]

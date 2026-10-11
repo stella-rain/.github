@@ -28,7 +28,11 @@ class SetupProject(unittest.TestCase):
     def test_default_is_stella_rain_with_phases(self):
         commands = "\n".join(dry_run())
         self.assertIn("--owner stella-rain --title Stella Rain", commands)
-        self.assertIn("--name Phase --data-type SINGLE_SELECT --single-select-options P0 Android spike,", commands)
+        self.assertIn(
+            "--name Phase --data-type SINGLE_SELECT --single-select-options "
+            "P0 Android spike,P1 Playable run,P2 Weapons + progression,P3 Closed test,P4 Ads",
+            commands,
+        )
         for repo in ("app", "core"):
             for n in range(5):
                 self.assertIn(f"gh label create cmd:phase-p{n} --repo stella-rain/{repo} ", commands)
