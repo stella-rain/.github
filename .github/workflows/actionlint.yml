@@ -1,0 +1,49 @@
+# Lints GitHub Actions workflows with actionlint, which also runs shellcheck on `run:` scripts.
+# Reusable: app, core and moderation call it on PRs that touch .github/workflows/; it also runs
+# here. actionlint is a pinned release binary, checked against its published SHA-256 before it
+# runs. Path-filtered, so no caller names it in auto-merge's `require:` (ADR-052); the PRs it
+# checks touch workflows and are Kade's to merge anyway.
+name: actionlint
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+    paths: [".github/workflows/**"]
+  pull_request:
+    paths: [".github/workflows/**"]
+
+permissions: {}
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      # A new version changes both lines: the SHA-256 is the linux_amd64 tarball's line in the
+      # release's actionlint_<version>_checksums.txt.
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $tarball" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" actionlint
+      # actionlint 1.7.12's data on actions/create-github-app-token predates v3, where
+      # `client-id` is an input and `app-id` is optional (deprecated). The two ignores match only
+      # those messages for that action; drop them once a release knows `client-id`.
+      - name: Lint the workflows
+        run: |
+          "$RUNNER_TEMP/actionlint" -color \
+            -ignore 'input "client-id" is not defined in action "actions/create-github-app-token@v3"' \
+            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
