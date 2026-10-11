@@ -14,7 +14,8 @@ import project_bridge as pb  # noqa: E402
 class ParseCommand(unittest.TestCase):
     def test_known_commands(self):
         self.assertEqual(pb.parse_command("cmd:status-now"), ("Status", "Now"))
-        self.assertEqual(pb.parse_command("cmd:phase-p2"), ("Phase", "P2 Editor + replay + publish"))
+        self.assertEqual(pb.parse_command("cmd:phase-p1"), ("Phase", "P1 Playable run"))
+        self.assertEqual(pb.parse_command("cmd:phase-p2"), ("Phase", "P2 Weapons + progression"))
         self.assertEqual(pb.parse_command("cmd:verify-needs-windows"), ("Verification", "Needs Windows"))
         self.assertEqual(pb.parse_command("cmd:verify-needs-macos"), ("Verification", "Needs macOS"))
         self.assertEqual(pb.parse_command("cmd:verify-needs-android"), ("Verification", "Needs Android device"))
@@ -150,7 +151,7 @@ class Snapshot(unittest.TestCase):
             node("Issue", 1, "Rust class runs in an APK", "OPEN",
                  {"Status": "Now", "Phase": "P0 Android spike", "Priority": "P1", "Target": "2026-10-20"}),
             node("Issue", 2, "Fixed-point math | module", "OPEN",
-                 {"Status": "Next", "Phase": "P1 Vertical slice"}, repo="core"),
+                 {"Status": "Next", "Phase": "P1 Playable run"}, repo="core"),
             node("Issue", 3, "Export works on device", "CLOSED",
                  {"Status": "Done", "Phase": "P0 Android spike", "Verification": "Needs Windows"},
                  assignees=["enjay27"]),
@@ -200,7 +201,7 @@ class Snapshot(unittest.TestCase):
         self.assertIn("## NOT VERIFIED (1)", text)
         # roadmap counts closed items as done
         self.assertIn("### P0 Android spike: 1/2 done, target 2026-10-20", text)
-        self.assertIn("### P1 Vertical slice: 0/1 done", text)
+        self.assertIn("### P1 Playable run: 0/1 done", text)
         # pipes in titles cannot break Markdown tables or lists
         self.assertIn("Fixed-point math / module", text)
         # the draft has no status, so it is backlog
