@@ -1,0 +1,71 @@
+# Reusable, and runs here: deletes the `claude/*` branches that outlived their work, a merged
+# PR's branch still at that PR's head commit (ADR-053). scripts/branch_cleanup.py decides; it
+# is checked out from this repository's main, never from a PR. Whatever it prints, this
+# workflow deletes only `claude/` names.
+# Auto-merge deletes the branches it merges; this catches the PRs Kade merges by hand (every
+# PR here and in moderation, and workflow PRs in app and core). Callers run it when a PR
+# closes, daily, and by hand, like this repository's own triggers below. A merge made with
+# GITHUB_TOKEN starts no `pull_request` run, so the daily sweep catches anything missed.
+name: Branch cleanup
+
+on:
+  workflow_call:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: delete merged claude branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write       # delete branches
+      pull-requests: read   # list the PRs
+    concurrency:
+      group: branch-cleanup-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the cleanup script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .bridge
+          persist-credentials: false
+
+      - name: Delete the branches the script names
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/branches?per_page=100" \
+            --jq '.[] | {name, sha: .commit.sha}' | jq -s . > "$RUNNER_TEMP/branches.json"
+          gh api --paginate "repos/$REPO/pulls?state=all&per_page=100" \
+            --jq '.[] | {ref: .head.ref, sha: .head.sha, repo: .head.repo.full_name, state, merged: (.merged_at != null)}' \
+            | jq -s . > "$RUNNER_TEMP/prs.json"
+          python3 .bridge/scripts/branch_cleanup.py \
+            "$RUNNER_TEMP/branches.json" "$RUNNER_TEMP/prs.json" "$REPO" > "$RUNNER_TEMP/delete.txt"
+          failed=0
+          while IFS= read -r name; do
+            case "$name" in
+              claude/*)
+                if gh api -X DELETE "repos/$REPO/git/refs/heads/$name"; then
+                  echo "- deleted \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
+                else
+                  echo "- could not delete \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
+                  failed=1
+                fi ;;
+              *) echo "not a claude/ branch; leaving $name" ;;
+            esac
+          done < "$RUNNER_TEMP/delete.txt"
+          if [ ! -s "$RUNNER_TEMP/delete.txt" ]; then echo "Nothing to delete." >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$failed"
