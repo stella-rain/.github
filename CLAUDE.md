@@ -9,13 +9,13 @@ checks, and the default issue forms and pull request template. It holds no proje
 |---|---|
 | `scripts/project_bridge.py` | Bridge: `sync` (issue event to Project fields) and `snapshot` (Project to `STATUS.md`) |
 | `scripts/claude_md_check.py` | `CLAUDE.md` at most 100 lines; `.claude/rules/*.md` at most 80 lines with `paths:` |
-| `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks; the issues a merged PR closes |
+| `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks, required checks, draft state and changed files; the issues a merged PR closes |
 | `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
 | `.github/workflows/claude-md-check.yml` | Reusable: called by `app`, `core`, `moderation` and this repo |
 | `.github/workflows/eol-check.yml` | Reusable, and runs here: LF line endings |
-| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main` |
+| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); drafts and PRs touching `.github/workflows/` are left to Kade |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 

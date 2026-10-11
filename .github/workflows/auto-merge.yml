@@ -2,7 +2,13 @@
 # latest commit is green, then deletes the branch. Called by app's and core's auto-merge.yml
 # on `workflow_run` (completed) of each of their checks; the run that finds the last check
 # green merges. Anything else is left for a person: a failed or cancelled check, another
-# branch prefix, a fork, a stale run, a pull request into any other branch.
+# branch prefix, a fork, a stale run, a pull request into any other branch, a draft, and a
+# pull request that changes `.github/workflows/` (or a caller's `protected` path) or whose
+# file list cannot be read whole.
+# `require` names checks that must have succeeded: with several workflows starting this one,
+# the last to finish may be the only one started yet, and a check not started yet must not
+# count as green. Name only checks that run on every pull request into main; one that is
+# skipped or path-filtered never succeeds, and the PR then waits for Kade.
 # A merge made with GITHUB_TOKEN does not apply closing keywords (`Closes #N`), so after
 # merging it closes the PR's closing issues in the same repository itself.
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
@@ -12,6 +18,19 @@ name: Auto-merge (reusable)
 
 on:
   workflow_call:
+    inputs:
+      require:
+        description: Check run names that must have succeeded, one per line (default none)
+        type: string
+        required: false
+        default: ""
+      protected:
+        description: >
+          Paths left to Kade besides .github/workflows/, one per line; a path ending in /
+          is a directory (default none)
+        type: string
+        required: false
+        default: ""
 
 permissions: {}
 
@@ -50,6 +69,8 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUIRE: ${{ inputs.require }}
+          PROTECTED: ${{ inputs.protected }}
         run: |
           set -euo pipefail
           pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
@@ -63,7 +84,13 @@ jobs:
             --jq '.check_runs[] | {name, status, conclusion}' | jq -s . > "$RUNNER_TEMP/check-runs.json"
           gh api "repos/$REPO/commits/$RUN_SHA/status" \
             --jq '{state, total_count}' > "$RUNNER_TEMP/status.json"
-          verdict=$(python3 .bridge/scripts/auto_merge_gate.py "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
+          # Drafts and PRs that change the workflows or a protected path go to Kade.
+          gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
+          gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
+            --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
+          verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
+                      --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
+                      "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
           echo "PR #$number at $RUN_SHA: $verdict"
           if [ "$verdict" != merge ]; then exit 0; fi
           # --match-head-commit refuses the merge if a push landed since the checks were read.
