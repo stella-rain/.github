@@ -19,6 +19,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); drafts and PRs touching `.github/workflows/` are left to Kade |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/workflows/branch-cleanup.yml` | Reusable, and runs here: deletes merged `claude/*` branches; called by `app`, `core` and `moderation` |
+| `.github/workflows/actionlint.yml` | Reusable, and runs here: actionlint (with shellcheck) on PRs that touch `.github/workflows/`; a pinned, checksum-checked release |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 
 ## Rules
