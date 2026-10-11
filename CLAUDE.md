@@ -11,6 +11,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `scripts/claude_md_check.py` | `CLAUDE.md` at most 100 lines; `.claude/rules/*.md` at most 80 lines with `paths:` |
 | `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks, required checks, draft state and changed files; the issues a merged PR closes |
 | `scripts/branch_cleanup.py` | Which `claude/*` branches to delete: a merged PR's branch still at its head |
+| `scripts/repo_check.py` | No environment, key or keystore file is tracked, and no private key block, AWS access key ID or GitHub token in a text file; prints file, line and kind, never the value |
 | `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
@@ -20,6 +21,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/workflows/branch-cleanup.yml` | Reusable, and runs here: deletes merged `claude/*` branches; called by `app`, `core` and `moderation` |
 | `.github/workflows/actionlint.yml` | Reusable, and runs here: actionlint (with shellcheck) on PRs that touch `.github/workflows/`; a pinned, checksum-checked release |
+| `.github/workflows/repo-check.yml` | Reusable, and runs here: `repo_check.py` on every PR and push to `main`; called by `core` and `moderation`, never by `stage-template` |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 
 ## Rules
