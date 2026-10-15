@@ -1,7 +1,8 @@
 # Reusable, and runs here: deletes the `claude/*` branches that outlived their work, a merged
-# PR's branch still at that PR's head commit (ADR-053). scripts/branch_cleanup.py decides; it
-# is checked out from this repository's main, never from a PR. Whatever it prints, this
-# workflow deletes only `claude/` names.
+# PR's branch still at that PR's head commit (ADR-053), and the `gate/<type>/<task>` branches
+# of a task no branch or open PR has any more (app's ADR-063). scripts/branch_cleanup.py
+# decides; it is checked out from this repository's main, never from a PR. Whatever it
+# prints, this workflow deletes only `claude/` and `gate/` names.
 # Auto-merge deletes the branches it merges; this catches the PRs Kade merges by hand (every
 # PR here and in moderation, and workflow PRs in app and core). Callers run it when a PR
 # closes, daily, and by hand, like this repository's own triggers below. A merge made with
@@ -20,7 +21,7 @@ permissions: {}
 
 jobs:
   cleanup:
-    name: delete merged claude branches
+    name: delete merged claude and leftover gate branches
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: >
@@ -57,14 +58,14 @@ jobs:
           failed=0
           while IFS= read -r name; do
             case "$name" in
-              claude/*)
+              claude/*|gate/*)
                 if gh api -X DELETE "repos/$REPO/git/refs/heads/$name"; then
                   echo "- deleted \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
                 else
                   echo "- could not delete \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
                   failed=1
                 fi ;;
-              *) echo "not a claude/ branch; leaving $name" ;;
+              *) echo "not a claude/ or gate/ branch; leaving $name" ;;
             esac
           done < "$RUNNER_TEMP/delete.txt"
           if [ ! -s "$RUNNER_TEMP/delete.txt" ]; then echo "Nothing to delete." >> "$GITHUB_STEP_SUMMARY"; fi
