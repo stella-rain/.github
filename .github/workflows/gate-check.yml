@@ -1,0 +1,84 @@
+# Reusable: gate-check (app's ADR-063). A pull request passes only when passing runs of the
+# gates its files need cover its head. The caller names its gates in `gates`, one per line:
+# `<name> <workflow> <path>...`, a path ending in / a directory; a gate's runs are its
+# workflow's on `gate/<name>/<task>`, where <task> is the head branch without its first
+# segment. Every file changed since a gate's run must be `*.md`.
+# Callers run it on every pull_request into main (never into rc, whose release checks run
+# the gates themselves) and name its check in auto-merge's `require`: it always runs, so it
+# can be required where a path-filtered check cannot (ADR-052). The gates live in the
+# caller's workflow file, so changing them is a workflow PR Kade merges.
+# scripts/gate_check.py is checked out from this repository's main, never from the PR it
+# judges. It prints paths, commits, branches and run links only, never a title.
+name: Gate check (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      gates:
+        description: >
+          One gate per line: its name, its workflow file and the paths that need it; a path
+          ending in / is a directory
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  gate-check:
+    name: gate-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read  # the runs on gate/<name>/<task>
+    concurrency:
+      group: gate-check-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Only on pull requests
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "::error::gate-check runs on pull_request only, not $GITHUB_EVENT_NAME"
+          exit 1
+
+      - name: Check out the PR head with its history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: pr
+          persist-credentials: false
+
+      - name: Check out the gate script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .bridge
+          persist-credentials: false
+
+      - name: Passing runs of the gates the PR needs cover the head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GATES: ${{ inputs.gates }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          script=.bridge/scripts/gate_check.py
+          printf '%s\n' "$GATES" > "$RUNNER_TEMP/gates.txt"
+          # One page of successful runs per gate branch, merged into one list.
+          branches=$(python3 "$script" --gate-branches "$RUNNER_TEMP/gates.txt" "$HEAD_BRANCH")
+          n=0
+          for gate_branch in $branches; do
+            n=$((n + 1))
+            gh api -X GET "repos/$REPO/actions/runs" -f branch="$gate_branch" -f status=success \
+              -F per_page=100 --jq '{workflow_runs: [.workflow_runs[] | {path, head_branch, head_sha, conclusion, created_at, html_url}]}' \
+              > "$RUNNER_TEMP/runs-$n.json"
+          done
+          jq -s '{workflow_runs: (map(.workflow_runs) | add)}' "$RUNNER_TEMP"/runs-*.json \
+            > "$RUNNER_TEMP/runs.json"
+          python3 "$script" "$RUNNER_TEMP/gates.txt" "$HEAD_BRANCH" "$BASE_SHA" "$HEAD_SHA" \
+            "$RUNNER_TEMP/runs.json" pr | tee -a "$GITHUB_STEP_SUMMARY"
