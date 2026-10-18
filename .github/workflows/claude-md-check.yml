@@ -1,6 +1,8 @@
 # Reusable: checks the calling repository's Claude configuration stays within its limits
 # (CLAUDE.md at most 100 lines; each .claude/rules/*.md at most 80 lines with `paths:`).
-# Called from each repository's claude-md-check.yml, and runs on this repository too.
+# Called from each repository's claude-md-check.yml, and runs on this repository too: here it
+# runs the script of the commit under test, as repo-check.yml does, so a PR that changes the
+# script checks itself.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: CLAUDE.md check
 
@@ -35,6 +37,7 @@ jobs:
           persist-credentials: false
 
       - name: Check out the check script
+        if: github.repository != 'stella-rain/.github'
         uses: actions/checkout@v7
         with:
           repository: stella-rain/.github
@@ -43,4 +46,12 @@ jobs:
           persist-credentials: false
 
       - name: Check
-        run: python3 .check/scripts/claude_md_check.py repo
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$REPOSITORY" = "stella-rain/.github" ]; then
+            script=repo/scripts/claude_md_check.py
+          else
+            script=.check/scripts/claude_md_check.py
+          fi
+          python3 "$script" repo
