@@ -14,8 +14,6 @@
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
 # auto-merge.yml takes effect once it is on main. Merges use the caller's GITHUB_TOKEN,
 # so they start no `push` run on main; the pull request's own runs are the gate.
-# The output `merged` is `true` once this run merged the PR: a caller that needs a run on main
-# after a merge (to re-save a build cache, say) starts it in a job of its own.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
@@ -39,10 +37,6 @@ on:
         type: string
         required: false
         default: ""
-    outputs:
-      merged:
-        description: '"true" when this run merged the pull request'
-        value: ${{ jobs.merge.outputs.merged }}
 
 permissions: {}
 
@@ -63,8 +57,6 @@ jobs:
       issues: write         # close the PR's closing issues
       checks: read          # the head commit's check runs
       statuses: read        # the head commit's commit statuses
-    outputs:
-      merged: ${{ steps.merge.outputs.merged }}
     concurrency:
       group: auto-merge-${{ github.repository }}-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: false
@@ -78,7 +70,6 @@ jobs:
           persist-credentials: false
 
       - name: Merge if every check is green
-        id: merge
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -110,7 +101,6 @@ jobs:
           if [ "$verdict" != merge ]; then exit 0; fi
           # --match-head-commit refuses the merge if a push landed since the checks were read.
           gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
-          echo "merged=true" >> "$GITHUB_OUTPUT"
           # Delete only a claude/* branch, and never anything else.
           case "$BRANCH" in
             claude/*) gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;

@@ -18,7 +18,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
 | `.github/workflows/claude-md-check.yml` | Reusable: called by `app`, `core`, `moderation` and this repo |
 | `.github/workflows/eol-check.yml` | Reusable, and runs here: LF line endings |
-| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); output `merged`; drafts and PRs touching `.github/workflows/` are left to Kade |
+| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); drafts and PRs touching `.github/workflows/` are left to Kade |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/workflows/branch-cleanup.yml` | Reusable, and runs here: deletes merged `claude/*` branches and leftover `gate/*` branches; called by `app`, `core` and `moderation` |
 | `.github/workflows/gate-check.yml` | Reusable: gate-check on PRs into `main`; input `gates`, one per line: name, workflow, paths (app's ADR-063) |
