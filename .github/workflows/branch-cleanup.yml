@@ -7,10 +7,17 @@
 # PR here and in moderation, and workflow PRs in app and core). Callers run it when a PR
 # closes, daily, and by hand, like this repository's own triggers below. A merge made with
 # GITHUB_TOKEN starts no `pull_request` run, so the daily sweep catches anything missed.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Branch cleanup
 
 on:
   workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
   pull_request:
     types: [closed]
   schedule:
@@ -22,7 +29,7 @@ permissions: {}
 jobs:
   cleanup:
     name: delete merged claude and leftover gate branches
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     if: >
       github.event_name != 'pull_request' ||

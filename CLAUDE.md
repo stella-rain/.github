@@ -34,6 +34,9 @@ checks, and the default issue forms and pull request template. It holds no proje
 - **Callers use `@main`.** A change merged here applies to every calling repository on its
   next run. Keep inputs, outputs and behaviour backward compatible, or change the callers in
   the same task.
+- The reusable workflows `app` calls take an optional `runs-on` input (JSON, default
+  `"ubuntu-latest"`): `app` points it at its self-hosted runners (app's ADR-096). Public
+  callers never pass it; a self-hosted runner never runs a public repository's jobs.
 - Command labels are honoured only from people with write access (ADR-044); never relax that.
 - `stage-template` must never call workflows from here: creators copy it.
 - The PR template's sections (*What changed and why*, *Verified*, *NOT VERIFIED*,

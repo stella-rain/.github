@@ -9,10 +9,17 @@
 #     (star-resonance) passes it by name: `secrets: {BRIDGE_APP_PRIVATE_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}}`
 #
 # This runs in public repositories too, so the script never prints issue titles.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Project sync (reusable)
 
 on:
   workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
     secrets:
       BRIDGE_APP_PRIVATE_KEY:
         required: false
@@ -23,7 +30,7 @@ permissions: {}
 jobs:
   sync:
     name: sync issue to Project
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       issues: write  # remove applied command labels; read the sender's permission
