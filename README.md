@@ -37,8 +37,13 @@ value, listed in its own section until it is set to *Verified*.
 
 ## Another organization (a second bridge)
 
-The bridge code is shared; only the organization, its Project and its GitHub App are new. Used
-for `star-resonance` (Resonance: `resonance-stream`, `resonance-lab`).
+The new organization gets its own Project, its own GitHub App and its own `.github` repository
+holding a copy of the bridge and of the shared workflows, so the two organizations do not depend
+on each other. Used for `star-resonance` (Resonance: `resonance-stream`, `resonance-lab`), whose
+`star-resonance/.github` copies the bridge (`project_bridge.py`, `project-sync.yml`) and the
+reusable `auto-merge`, `branch-cleanup`, `claude-md-check` and `eol-check` workflows with their
+scripts. Each copied file's header names the commit of this repository it follows; a fix made
+in one copy is ported to the other by hand.
 
 1. **Browser:** create the organization (Free plan). Create a GitHub App owned by it, named for
    the project (for example `resonance-bridge`), with the same settings as in the runbook
@@ -57,11 +62,15 @@ for `star-resonance` (Resonance: `resonance-stream`, `resonance-lab`).
 4. **Variable and secret, by Kade:** organization variable `BRIDGE_APP_CLIENT_ID`, organization
    secret `BRIDGE_APP_PRIVATE_KEY` (`gh secret set BRIDGE_APP_PRIVATE_KEY --org <org> --visibility
    selected --repos <repo>,<repo> < key.pem`); delete the key file afterwards.
-5. **Each repository** gets `.github/workflows/project-sync.yml` (the caller of
-   `stella-rain/.github/.github/workflows/project-sync.yml@main`); one of them also gets
-   `project-snapshot.yml`. The caller passes the key by name,
+5. **Each repository** gets `.github/workflows/project-sync.yml`, the caller of the new
+   organization's own copy (for star-resonance,
+   `star-resonance/.github/.github/workflows/project-sync.yml@main`); one of them also gets
+   `project-snapshot.yml`, which checks out that copy to run `snapshot`. Callers of the shared
+   workflows (`auto-merge`, `branch-cleanup`, `claude-md-check`, `eol-check`) also call that
+   copy, never `stella-rain/.github`. The caller passes the key by name,
    `secrets: {BRIDGE_APP_PRIVATE_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}}`: `secrets: inherit`
-   does not cross organizations (the first test of star-resonance failed on it). Both are skipped while `PROJECT_NUMBER` is unset.
+   does not cross organizations (the first test of star-resonance, which called this repository,
+   failed on it). Both are skipped while `PROJECT_NUMBER` is unset.
 6. **Browser:** the views and the Project's built-in workflows (item closed: Done; pull request
    merged: Done; item added: Backlog), as in the runbook; GitHub has no API for views.
 
