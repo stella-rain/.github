@@ -51,21 +51,21 @@ class SetupProject(unittest.TestCase):
 
     def test_another_organization_with_no_phases(self):
         commands = dry_run(
-            ORG="star-resonance", TITLE="Resonance", SYNCED_REPOS="resonance-stream resonance-lab", PHASES=""
+            ORG="example-org", TITLE="Example", SYNCED_REPOS="repo-one repo-two", PHASES=""
         )
         text = "\n".join(commands)
-        self.assertIn("--owner star-resonance --title Resonance", text)
+        self.assertIn("--owner example-org --title Example", text)
         self.assertNotIn("--name Phase", text)
         self.assertNotIn("cmd:phase-", text)
         self.assertNotIn("stella-rain", text)
-        for repo in ("resonance-stream", "resonance-lab"):
-            self.assertIn(f"gh label create cmd:status-now --repo star-resonance/{repo} ", text)
-            self.assertIn(f"gh label create cmd:verify-needs-macos --repo star-resonance/{repo} ", text)
-        self.assertIn("--repos resonance-stream,resonance-lab", text)
+        for repo in ("repo-one", "repo-two"):
+            self.assertIn(f"gh label create cmd:status-now --repo example-org/{repo} ", text)
+            self.assertIn(f"gh label create cmd:verify-needs-macos --repo example-org/{repo} ", text)
+        self.assertIn("--repos repo-one,repo-two", text)
 
     def test_description_names_the_title_not_stella_rain(self):
-        text = "\n".join(dry_run(ORG="star-resonance", TITLE="Resonance", SYNCED_REPOS="resonance-lab", PHASES=""))
-        self.assertIn("Issues and roadmap for every Resonance repository", text)
+        text = "\n".join(dry_run(ORG="example-org", TITLE="Example", SYNCED_REPOS="repo-two", PHASES=""))
+        self.assertIn("Issues and roadmap for every Example repository", text)
 
     def test_a_custom_phase_list_makes_that_many_phase_labels(self):
         text = "\n".join(dry_run(PHASES="Alpha,Beta", SYNCED_REPOS="app"))
