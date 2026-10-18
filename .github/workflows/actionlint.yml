@@ -3,10 +3,17 @@
 # here. actionlint is a pinned release binary, checked against its published SHA-256 before it
 # runs. Path-filtered, so no caller names it in auto-merge's `require:` (ADR-052); the PRs it
 # checks touch workflows and are Kade's to merge anyway.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: actionlint
 
 on:
   workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
   push:
     branches: [main]
     paths: [".github/workflows/**"]
@@ -18,7 +25,7 @@ permissions: {}
 jobs:
   actionlint:
     name: actionlint
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: read

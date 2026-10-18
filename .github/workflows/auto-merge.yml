@@ -14,11 +14,17 @@
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
 # auto-merge.yml takes effect once it is on main. Merges use the caller's GITHUB_TOKEN,
 # so they start no `push` run on main; the pull request's own runs are the gate.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
 on:
   workflow_call:
     inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
       require:
         description: Check run names that must have succeeded, one per line (default none)
         type: string
@@ -37,7 +43,7 @@ permissions: {}
 jobs:
   merge:
     name: merge when every check is green
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     if: >
       github.event_name == 'workflow_run' &&

@@ -1,10 +1,17 @@
 # Line endings stay LF: .gitattributes must carry `* text=auto eol=lf`, and no committed file
 # may have CRLF or mixed endings (`git ls-files --eol` shows i/crlf or i/mixed).
 # Reusable: app and core call it from their eol-check.yml. It also runs on this repository.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Line endings
 
 on:
   workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
   push:
     branches: [main]
   pull_request:
@@ -14,7 +21,7 @@ permissions: {}
 jobs:
   eol:
     name: LF line endings
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: read
