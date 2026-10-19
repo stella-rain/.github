@@ -5,11 +5,20 @@
 # the script of the commit under test, so a change to the script is checked before it merges.
 # It runs on every pull request, so a caller with auto-merge names its check in `require:`
 # (ADR-052).
+# `runs-on` lets a private caller pick its own runner; public callers never pass it (a
+# self-hosted runner never runs a public repository's jobs), and here and by default it is
+# ubuntu-latest.
 # Never called from stage-template: creators copy that repository.
 name: Repository check
 
 on:
   workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
   push:
     branches: [main]
   pull_request:
@@ -19,7 +28,7 @@ permissions: {}
 jobs:
   check:
     name: no secrets or key files
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: read

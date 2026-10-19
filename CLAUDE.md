@@ -24,7 +24,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/gate-check.yml` | Reusable: gate-check on PRs into `main`; input `gates`, one per line: name, workflow, paths (app's ADR-063) |
 | `.github/workflows/delete-gate-branch.yml` | Reusable: a gate workflow's last job; deletes the run's `gate/*` branch under a lease, never failing the run |
 | `.github/workflows/actionlint.yml` | Reusable, and runs here: actionlint (with shellcheck) on PRs that touch `.github/workflows/`; a pinned, checksum-checked release |
-| `.github/workflows/repo-check.yml` | Reusable, and runs here: `repo_check.py` on every PR and push to `main`; called by `core` and `moderation`, never by `stage-template` |
+| `.github/workflows/repo-check.yml` | Reusable, and runs here: `repo_check.py` on every PR and push to `main`; called by `core`, `moderation` and the private `report-server` (optional `runs-on` input, as in `eol-check.yml`), never by `stage-template` |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 
 ## Rules
