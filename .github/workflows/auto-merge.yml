@@ -12,8 +12,11 @@
 # A merge made with GITHUB_TOKEN does not apply closing keywords (`Closes #N`), so after
 # merging it closes the PR's closing issues in the same repository itself.
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
-# auto-merge.yml takes effect once it is on main. Merges use the caller's GITHUB_TOKEN,
-# so they start no `push` run on main; the pull request's own runs are the gate.
+# auto-merge.yml takes effect once it is on main.
+# The merge uses a token of the stella-rain-bridge GitHub App when the caller passes the secret
+# BRIDGE_APP_PRIVATE_KEY (`secrets: inherit`; the client ID is vars.BRIDGE_APP_CLIENT_ID, as in
+# project-sync.yml): a merge by that App starts the `push` runs on main. Without the secret the
+# merge uses the caller's GITHUB_TOKEN, which starts none, and the run's summary says so.
 # The output `merged` is `true` once this run merged the PR: a caller that needs a run on main
 # after a merge (to re-save a build cache, say) starts it in a job of its own.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
@@ -39,6 +42,10 @@ on:
         type: string
         required: false
         default: ""
+    secrets:
+      BRIDGE_APP_PRIVATE_KEY:
+        required: false
+        description: The bridge GitHub App's private key; with it the merge starts push runs on main
     outputs:
       merged:
         description: '"true" when this run merged the pull request'
@@ -65,6 +72,8 @@ jobs:
       statuses: read        # the head commit's commit statuses
     outputs:
       merged: ${{ steps.merge.outputs.merged }}
+    env:
+      HAS_APP_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY != '' }}
     concurrency:
       group: auto-merge-${{ github.repository }}-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: false
@@ -77,10 +86,28 @@ jobs:
           path: .bridge
           persist-credentials: false
 
+      - name: Get a merge token from the bridge App
+        id: app-token
+        if: ${{ env.HAS_APP_KEY == 'true' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BRIDGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BRIDGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Warn that the merge starts no push runs
+        if: ${{ env.HAS_APP_KEY != 'true' }}
+        run: |
+          echo "BRIDGE_APP_PRIVATE_KEY not passed: merging with GITHUB_TOKEN, which starts no push runs on main (pass secrets: inherit)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Merge if every check is green
         id: merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
