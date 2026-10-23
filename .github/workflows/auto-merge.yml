@@ -13,10 +13,14 @@
 # merging it closes the PR's closing issues in the same repository itself.
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
 # auto-merge.yml takes effect once it is on main.
-# The merge uses a token of the stella-rain-bridge GitHub App when the caller passes the secret
-# BRIDGE_APP_PRIVATE_KEY (`secrets: inherit`; the client ID is vars.BRIDGE_APP_CLIENT_ID, as in
-# project-sync.yml): a merge by that App starts the `push` runs on main. Without the secret the
-# merge uses the caller's GITHUB_TOKEN, which starts none, and the run's summary says so.
+# Two tokens. Every read (pull requests, check runs, commit status, files) uses the job's
+# GITHUB_TOKEN: the job grants it checks: read and statuses: read, which the App token lacks
+# (it has contents, pull-requests and issues only), and a private repository enforces them.
+# Only the writes (merge, branch deletion, issue closing) use a token of the stella-rain-bridge
+# GitHub App, when the caller passes the secret BRIDGE_APP_PRIVATE_KEY (`secrets: inherit`;
+# the client ID is vars.BRIDGE_APP_CLIENT_ID, as in project-sync.yml): a merge by that App
+# starts the `push` runs on main. Without the secret the writes use the caller's GITHUB_TOKEN,
+# which starts none, and the run's summary says so.
 # The output `merged` is `true` once this run merged the PR: a caller that needs a run on main
 # after a merge (to re-save a build cache, say) starts it in a job of its own.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
@@ -107,7 +111,8 @@ jobs:
       - name: Merge if every check is green
         id: merge
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          READ_TOKEN: ${{ github.token }}
+          WRITE_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -115,20 +120,20 @@ jobs:
           PROTECTED: ${{ inputs.protected }}
         run: |
           set -euo pipefail
-          pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
+          pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
                  --json number,headRefOid --jq '.[0]')
           if [ -z "$pr" ] || [ "$pr" = "null" ]; then echo "no open PR from $BRANCH into main"; exit 0; fi
           number=$(jq -r .number <<<"$pr")
           head=$(jq -r .headRefOid <<<"$pr")
           # The green run must be for the PR's latest commit, not an older push.
           if [ "$head" != "$RUN_SHA" ]; then echo "run is for $RUN_SHA, PR head is $head; waiting for its runs"; exit 0; fi
-          gh api --paginate "repos/$REPO/commits/$RUN_SHA/check-runs?per_page=100" \
+          GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/commits/$RUN_SHA/check-runs?per_page=100" \
             --jq '.check_runs[] | {name, status, conclusion}' | jq -s . > "$RUNNER_TEMP/check-runs.json"
-          gh api "repos/$REPO/commits/$RUN_SHA/status" \
+          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/commits/$RUN_SHA/status" \
             --jq '{state, total_count}' > "$RUNNER_TEMP/status.json"
           # Drafts and PRs that change the workflows or a protected path go to Kade.
-          gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
-          gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
+          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
+          GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
             --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
           verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
                       --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
@@ -136,15 +141,15 @@ jobs:
           echo "PR #$number at $RUN_SHA: $verdict"
           if [ "$verdict" != merge ]; then exit 0; fi
           # --match-head-commit refuses the merge if a push landed since the checks were read.
-          gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
+          GH_TOKEN="$WRITE_TOKEN" gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
           echo "merged=true" >> "$GITHUB_OUTPUT"
           # Delete only a claude/* branch, and never anything else.
           case "$BRANCH" in
-            claude/*) gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;
+            claude/*) GH_TOKEN="$WRITE_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;
             *) echo "not a claude/* branch; leaving $BRANCH" ;;
           esac
-          gh pr view "$number" --repo "$REPO" --json closingIssuesReferences \
+          GH_TOKEN="$READ_TOKEN" gh pr view "$number" --repo "$REPO" --json closingIssuesReferences \
             --jq .closingIssuesReferences > "$RUNNER_TEMP/closing.json"
           for issue in $(python3 .bridge/scripts/auto_merge_gate.py --issues-to-close "$RUNNER_TEMP/closing.json" "$REPO"); do
-            gh issue close "$issue" --repo "$REPO" --reason completed --comment "Closed by #$number (auto-merge)."
+            GH_TOKEN="$WRITE_TOKEN" gh issue close "$issue" --repo "$REPO" --reason completed --comment "Closed by #$number (auto-merge)."
           done
