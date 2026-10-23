@@ -21,6 +21,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/eol-check.yml` | Reusable, and runs here: LF line endings |
 | `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); optional secret `BRIDGE_APP_PRIVATE_KEY` (merges with the bridge App's token so push runs start on `main`); output `merged`; drafts and PRs touching `.github/workflows/` are left to Kade |
 | `.github/workflows/main-red.yml` | Reusable: called from a `workflow_run` on `main`; opens, updates and closes one `main-red` issue per workflow that fails on `main` |
+| `.github/workflows/main-red-caller.yml` | Runs `main-red.yml` here on `workflow_run` of this repo's check workflows on `main` (by name; add a workflow's name when it gains a push or schedule trigger) |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/workflows/branch-cleanup.yml` | Reusable, and runs here: deletes merged `claude/*` branches and leftover `gate/*` branches; called by `app`, `core` and `moderation` |
 | `.github/workflows/gate-check.yml` | Reusable: gate-check on PRs into `main`; input `gates`, one per line: name, workflow, paths (app's ADR-063) |

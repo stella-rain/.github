@@ -1,0 +1,20 @@
+# Runs main-red.yml (the reusable) for this repository: when one of the check workflows below
+# finishes on main, it opens, updates or closes the `main-red` issue for that workflow.
+# The names must match each workflow's `name:`. The reusable itself ignores pull request runs,
+# other events than push and schedule, and cancelled or skipped runs.
+name: Main red
+
+on:
+  workflow_run:
+    workflows: [Test, Line endings, Repository check, CLAUDE.md check, actionlint, Branch cleanup]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  main-red:
+    permissions:
+      issues: write
+      actions: read
+    uses: ./.github/workflows/main-red.yml
