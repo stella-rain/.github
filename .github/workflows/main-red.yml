@@ -1,0 +1,89 @@
+# Reusable: keeps one `main-red` issue per workflow that fails on main. A caller runs it from
+#
+#   on:
+#     workflow_run:
+#       workflows: [<its check workflows>]
+#       types: [completed]
+#       branches: [main]
+#
+# When a push or schedule run of such a workflow fails, this opens `main is red: <workflow> at
+# <short sha>` (label `main-red`, created in the caller's repository if missing); while that
+# issue is open, later failures of the same workflow comment on it instead. A later success of
+# the same workflow comments and closes it. Pull request runs, other branches and cancelled or
+# skipped runs change nothing. Issue bodies and comments hold the run URL and sha only.
+# Runs in public repositories too: the decision script never prints an issue title.
+# `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
+name: Main red (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
+
+permissions: {}
+
+jobs:
+  main-red:
+    name: track a red main
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    if: >
+      github.event_name == 'workflow_run' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule') &&
+      (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'success') &&
+      github.event.workflow_run.head_branch == 'main'
+    permissions:
+      issues: write   # open, comment on and close the main-red issues; create the label
+      actions: read   # the run being reported
+    concurrency:
+      group: main-red-${{ github.repository }}-${{ github.event.workflow_run.name }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the decision script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .bridge
+          persist-credentials: false
+
+      - name: Open, update or close the main-red issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          gh issue list --repo "$REPO" --label main-red --state open --limit 200 \
+            --json number,title > "$RUNNER_TEMP/issues.json"
+          action=$(python3 .bridge/scripts/main_red.py --event "$EVENT" --conclusion "$CONCLUSION" \
+                     --branch "$BRANCH" --workflow "$WORKFLOW" --sha "$RUN_SHA" \
+                     --issues "$RUNNER_TEMP/issues.json")
+          kind=$(jq -r .action <<<"$action")
+          echo "main-red: $kind"
+          body=$(printf 'Run: %s\nCommit: %s' "$RUN_URL" "$RUN_SHA")
+          case "$kind" in
+            open)
+              gh label create main-red --repo "$REPO" --color b60205 \
+                --description "A workflow failed on main" 2>/dev/null || true
+              gh issue create --repo "$REPO" --label main-red \
+                --title "$(jq -r .title <<<"$action")" --body "$body"
+              ;;
+            comment)
+              gh issue comment "$(jq -r .issue <<<"$action")" --repo "$REPO" --body "$(printf 'Failed again.\n%s' "$body")"
+              ;;
+            close)
+              gh issue close "$(jq -r .issue <<<"$action")" --repo "$REPO" --reason completed \
+                --comment "$(printf 'Green again.\n%s' "$body")"
+              ;;
+            *) ;;
+          esac
