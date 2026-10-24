@@ -1,4 +1,5 @@
-# Reusable: merges a pull request from a `claude/*` branch into main once every check on its
+# Reusable: merges a pull request from a `claude/*` branch (or another branch prefix the caller
+# lists in `prefixes`) into main once every check on its
 # latest commit is green, then deletes the branch. Called by app's and core's auto-merge.yml
 # on `workflow_run` (completed) of each of their checks; the run that finds the last check
 # green merges. Anything else is left for a person: a failed or cancelled check, another
@@ -46,6 +47,13 @@ on:
         type: string
         required: false
         default: ""
+      prefixes:
+        description: >
+          Head branch prefixes this workflow merges and deletes, separated by spaces
+          (default "claude/")
+        type: string
+        required: false
+        default: "claude/"
     secrets:
       BRIDGE_APP_PRIVATE_KEY:
         required: false
@@ -66,7 +74,6 @@ jobs:
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'claude/') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     permissions:
       contents: write       # merge, delete the branch
@@ -82,7 +89,24 @@ jobs:
       group: auto-merge-${{ github.repository }}-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     steps:
+      - name: Check the branch prefix
+        id: prefix
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PREFIXES: ${{ inputs.prefixes || 'claude/' }}
+        run: |
+          set -euo pipefail
+          match=false
+          for prefix in $PREFIXES; do
+            case "$BRANCH" in
+              "$prefix"*) match=true ;;
+            esac
+          done
+          if [ "$match" != true ]; then echo "$BRANCH does not start with any of: $PREFIXES"; fi
+          echo "match=$match" >> "$GITHUB_OUTPUT"
+
       - name: Check out the gate script
+        if: ${{ steps.prefix.outputs.match == 'true' }}
         uses: actions/checkout@v7
         with:
           repository: stella-rain/.github
@@ -92,7 +116,7 @@ jobs:
 
       - name: Get a merge token from the bridge App
         id: app-token
-        if: ${{ env.HAS_APP_KEY == 'true' }}
+        if: ${{ steps.prefix.outputs.match == 'true' && env.HAS_APP_KEY == 'true' }}
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.BRIDGE_APP_CLIENT_ID }}
@@ -104,12 +128,13 @@ jobs:
           permission-issues: write
 
       - name: Warn that the merge starts no push runs
-        if: ${{ env.HAS_APP_KEY != 'true' }}
+        if: ${{ steps.prefix.outputs.match == 'true' && env.HAS_APP_KEY != 'true' }}
         run: |
           echo "BRIDGE_APP_PRIVATE_KEY not passed: merging with GITHUB_TOKEN, which starts no push runs on main (pass secrets: inherit)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Merge if every check is green
         id: merge
+        if: ${{ steps.prefix.outputs.match == 'true' }}
         env:
           READ_TOKEN: ${{ github.token }}
           WRITE_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
@@ -118,6 +143,7 @@ jobs:
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           REQUIRE: ${{ inputs.require }}
           PROTECTED: ${{ inputs.protected }}
+          PREFIXES: ${{ inputs.prefixes || 'claude/' }}
         run: |
           set -euo pipefail
           pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
@@ -143,11 +169,18 @@ jobs:
           # --match-head-commit refuses the merge if a push landed since the checks were read.
           GH_TOKEN="$WRITE_TOKEN" gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
           echo "merged=true" >> "$GITHUB_OUTPUT"
-          # Delete only a claude/* branch, and never anything else.
-          case "$BRANCH" in
-            claude/*) GH_TOKEN="$WRITE_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;
-            *) echo "not a claude/* branch; leaving $BRANCH" ;;
-          esac
+          # Delete only a branch that starts with one of the prefixes, and never anything else.
+          delete=false
+          for prefix in $PREFIXES; do
+            case "$BRANCH" in
+              "$prefix"*) delete=true ;;
+            esac
+          done
+          if [ "$delete" = true ]; then
+            GH_TOKEN="$WRITE_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"
+          else
+            echo "$BRANCH does not start with any of: $PREFIXES; leaving it"
+          fi
           GH_TOKEN="$READ_TOKEN" gh pr view "$number" --repo "$REPO" --json closingIssuesReferences \
             --jq .closingIssuesReferences > "$RUNNER_TEMP/closing.json"
           for issue in $(python3 .bridge/scripts/auto_merge_gate.py --issues-to-close "$RUNNER_TEMP/closing.json" "$REPO"); do
