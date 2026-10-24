@@ -143,6 +143,7 @@ jobs:
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           REQUIRE: ${{ inputs.require }}
           PROTECTED: ${{ inputs.protected }}
+          PREFIXES: ${{ inputs.prefixes || 'claude/' }}
         run: |
           set -euo pipefail
           pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
@@ -168,11 +169,18 @@ jobs:
           # --match-head-commit refuses the merge if a push landed since the checks were read.
           GH_TOKEN="$WRITE_TOKEN" gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
           echo "merged=true" >> "$GITHUB_OUTPUT"
-          # Delete only a claude/* branch, and never anything else.
-          case "$BRANCH" in
-            claude/*) GH_TOKEN="$WRITE_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" ;;
-            *) echo "not a claude/* branch; leaving $BRANCH" ;;
-          esac
+          # Delete only a branch that starts with one of the prefixes, and never anything else.
+          delete=false
+          for prefix in $PREFIXES; do
+            case "$BRANCH" in
+              "$prefix"*) delete=true ;;
+            esac
+          done
+          if [ "$delete" = true ]; then
+            GH_TOKEN="$WRITE_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"
+          else
+            echo "$BRANCH does not start with any of: $PREFIXES; leaving it"
+          fi
           GH_TOKEN="$READ_TOKEN" gh pr view "$number" --repo "$REPO" --json closingIssuesReferences \
             --jq .closingIssuesReferences > "$RUNNER_TEMP/closing.json"
           for issue in $(python3 .bridge/scripts/auto_merge_gate.py --issues-to-close "$RUNNER_TEMP/closing.json" "$REPO"); do
