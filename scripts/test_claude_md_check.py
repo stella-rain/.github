@@ -109,6 +109,44 @@ class Rules(RepoCase):
         )
 
 
+class NumberedAdr(RepoCase):
+    MSG = "{}:{}: cites a numbered ADR ({}); cite its area ID (app docs/adr/archive/README.md maps them)"
+
+    def test_claude_md_match_fails(self):
+        self.write("CLAUDE.md", "# ok\nSee ADR-044 for the bridge.\n")
+        self.assertEqual(self.errors(), [self.MSG.format("CLAUDE.md", 2, "ADR-044")])
+
+    def test_archive_line_is_exempt(self):
+        self.write("CLAUDE.md", "# ok\nThe Archive holds ADR-044 and ADR-096.\n")
+        self.assertEqual(self.errors(), [])
+
+    def test_agents_md_match_fails(self):
+        self.write("CLAUDE.md", "# ok\n")
+        self.write("AGENTS.md", "ADR-131 here\n")
+        self.assertEqual(self.errors(), [self.MSG.format("AGENTS.md", 1, "ADR-131")])
+
+    def test_rules_match_fails(self):
+        self.write("CLAUDE.md", "# ok\n")
+        self.write(".claude/rules/sub/a.md", RULE_OK + "per ADR-007 and ADR-008\n")
+        self.assertEqual(
+            self.errors(),
+            [
+                self.MSG.format(".claude/rules/sub/a.md", 7, "ADR-007"),
+                self.MSG.format(".claude/rules/sub/a.md", 7, "ADR-008"),
+            ],
+        )
+
+    def test_area_ids_and_longer_numbers_are_clean(self):
+        self.write("CLAUDE.md", "ADR-SIM-7, ADR-CONT-5, ADR-1234, ADR-12, XADR-123\n")
+        self.assertEqual(self.errors(), [])
+
+    def test_clean_files_pass(self):
+        self.write("CLAUDE.md", "# ok\n")
+        self.write("AGENTS.md", "# ok\n")
+        self.write(".claude/rules/a.md", RULE_OK)
+        self.assertEqual(self.errors(), [])
+
+
 class Main(RepoCase):
     def test_exit_codes(self):
         self.assertEqual(cc.main([self.root]), 1)
