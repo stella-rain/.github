@@ -1,6 +1,6 @@
 # Stella Rain: organization `.github`
 
-Public organization-wide files for Stella Rain: the Project bridge (ADR-044), the shared CI
+Public organization-wide files for Stella Rain: the Project bridge (app's `docs/architecture/process.md#planning`), the shared CI
 checks, and the default issue forms and pull request template. It holds no project data.
 
 ## Layout
@@ -12,7 +12,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks, required checks, draft state and changed files; the issues a merged PR closes |
 | `scripts/main_red.py` | `main-red` issue action (`open`, `comment`, `close`, `none`) from a main run's event, conclusion, workflow and the open issues |
 | `scripts/branch_cleanup.py` | Which `claude/*` and `gate/*` branches to delete: a merged PR's branch still at its head, and a gate branch whose task has no branch or open PR left |
-| `scripts/gate_check.py` | gate-check verdict: the gates a PR's files need (from the caller's spec), each covered by a passing run on `gate/<name>/<task>` (app's ADR-063) |
+| `scripts/gate_check.py` | gate-check verdict: the gates a PR's files need (from the caller's spec), each covered by a passing run on `gate/<name>/<task>` (app's ADR-REL-3) |
 | `scripts/repo_check.py` | No environment, key or keystore file is tracked, and no private key block, AWS access key ID or GitHub token in a text file; prints file, line and kind, never the value |
 | `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
@@ -24,7 +24,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/main-red-caller.yml` | Runs `main-red.yml` here on `workflow_run` of this repo's check workflows on `main` (by name; add a workflow's name when it gains a push or schedule trigger) |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
 | `.github/workflows/branch-cleanup.yml` | Reusable, and runs here: deletes merged `claude/*` branches and leftover `gate/*` branches; called by `app`, `core` and `moderation` |
-| `.github/workflows/gate-check.yml` | Reusable: gate-check on PRs into `main`; input `gates`, one per line: name, workflow, paths (app's ADR-063) |
+| `.github/workflows/gate-check.yml` | Reusable: gate-check on PRs into `main`; input `gates`, one per line: name, workflow, paths (app's ADR-REL-3) |
 | `.github/workflows/delete-gate-branch.yml` | Reusable: a gate workflow's last job; deletes the run's `gate/*` branch under a lease, never failing the run |
 | `.github/workflows/actionlint.yml` | Reusable, and runs here: actionlint (with shellcheck) on PRs that touch `.github/workflows/`; a pinned, checksum-checked release |
 | `.github/workflows/repo-check.yml` | Reusable, and runs here: `repo_check.py` on every PR and push to `main`; called by `core`, `moderation` and the private `report-server` (optional `runs-on` input, as in `eol-check.yml`), never by `stage-template` |
@@ -38,9 +38,9 @@ checks, and the default issue forms and pull request template. It holds no proje
   next run. Keep inputs, outputs and behaviour backward compatible, or change the callers in
   the same task.
 - The reusable workflows `app` calls take an optional `runs-on` input (JSON, default
-  `"ubuntu-latest"`): `app` points it at its self-hosted runners (app's ADR-096). Public
+  `"ubuntu-latest"`): `app` points it at its self-hosted runners (app's ADR-SVC-5). Public
   callers never pass it; a self-hosted runner never runs a public repository's jobs.
-- Command labels are honoured only from people with write access (ADR-044); never relax that.
+- Command labels are honoured only from people with write access (app's `docs/architecture/process.md#planning`); never relax that.
 - `stage-template` must never call workflows from here: creators copy it.
 - The PR template's sections (*What changed and why*, *Verified*, *NOT VERIFIED*,
   *Wrong turns*) are what `repo-workflow` relies on; change them together.
