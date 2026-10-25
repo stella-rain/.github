@@ -3,6 +3,9 @@
 - `CLAUDE.md` exists and has at most 100 lines (it is loaded in every session).
 - Every `.claude/rules/**/*.md` has at most 80 lines and a non-empty `paths:` in its front
   matter, so it loads only when the files it concerns are touched.
+- `CLAUDE.md`, `AGENTS.md` and the rule files cite area ADR IDs (ADR-SIM-7), never the
+  archived numbered ADRs (ADR-000 to ADR-131). A line containing "archive" is exempt: it
+  explains that history.
 
 Usage: python3 claude_md_check.py [REPO_ROOT] [--claude-md-max N] [--rules-max N]
 Exit status 1 lists every problem, one per line. The plan behind the limits is
@@ -11,10 +14,12 @@ enjay27/claude-skills docs/refactor-plan.md (Kade's private repository).
 
 import argparse
 import os
+import re
 import sys
 
 CLAUDE_MD_MAX = 100
 RULES_MAX = 80
+NUMBERED_ADR = re.compile(r"\bADR-\d{3}\b")
 
 
 def read_lines(path):
@@ -52,6 +57,20 @@ def paths_problem(lines):
     return "no `paths:` in front matter"
 
 
+def numbered_adr_problems(rel, lines):
+    """One problem per numbered ADR citation, skipping lines that mention the archive."""
+    problems = []
+    for n, line in enumerate(lines, 1):
+        if "archive" in line.lower():
+            continue
+        for m in NUMBERED_ADR.finditer(line):
+            problems.append(
+                f"{rel}:{n}: cites a numbered ADR ({m.group()}); cite its area ID "
+                "(app docs/adr/archive/README.md maps them)"
+            )
+    return problems
+
+
 def check_repo(root, claude_md_max=CLAUDE_MD_MAX, rules_max=RULES_MAX):
     errors = []
     claude_md = os.path.join(root, "CLAUDE.md")
@@ -61,6 +80,11 @@ def check_repo(root, claude_md_max=CLAUDE_MD_MAX, rules_max=RULES_MAX):
         n = len(read_lines(claude_md))
         if n > claude_md_max:
             errors.append(f"CLAUDE.md: {n} lines, limit {claude_md_max}")
+        errors += numbered_adr_problems("CLAUDE.md", read_lines(claude_md))
+
+    agents_md = os.path.join(root, "AGENTS.md")
+    if os.path.isfile(agents_md):
+        errors += numbered_adr_problems("AGENTS.md", read_lines(agents_md))
 
     rules_dir = os.path.join(root, ".claude", "rules")
     rule_files = []
@@ -74,6 +98,7 @@ def check_repo(root, claude_md_max=CLAUDE_MD_MAX, rules_max=RULES_MAX):
         problem = paths_problem(lines)
         if problem:
             errors.append(f"{rel}: {problem}")
+        errors += numbered_adr_problems(rel, lines)
     return errors
 
 
