@@ -10,6 +10,8 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `scripts/project_bridge.py` | Bridge: `sync` (issue event to Project fields) and `snapshot` (Project to `STATUS.md`) |
 | `scripts/claude_md_check.py` | `CLAUDE.md` at most 100 lines; `.claude/rules/*.md` at most 80 lines with `paths:` |
 | `scripts/auto_merge_gate.py` | Auto-merge verdict (`merge`, `wait`, `stop`) from a commit's checks, required checks, draft state and changed files; the issues a merged PR closes |
+| `scripts/merge_guard.py` | Agent merge guard verdict (`pass`/`fail`): `merge_group` passes; a draft or a protected path (workflows, `.claude/rules/`, `docs/adr/`, root `CLAUDE.md`/`AGENTS.md`, the caller's list) fails unless the label `kade-ok` is set |
+| `scripts/auto_merge_sweep.py` | Sweep helpers: the open `claude/*` PRs that are not drafts or forks, and whether one is behind `main` |
 | `scripts/main_red.py` | `main-red` issue action (`open`, `comment`, `close`, `none`) from a main run's event, conclusion, workflow and the open issues |
 | `scripts/branch_cleanup.py` | Which `claude/*` and `gate/*` branches to delete: a merged PR's branch still at its head, and a gate branch whose task has no branch or open PR left |
 | `scripts/gate_check.py` | gate-check verdict: the gates a PR's files need (from the caller's spec), each covered by a passing run on `gate/<name>/<task>` (app's ADR-REL-3) |
@@ -19,7 +21,8 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
 | `.github/workflows/claude-md-check.yml` | Reusable: called by `app`, `core`, `moderation` and this repo |
 | `.github/workflows/eol-check.yml` | Reusable, and runs here: LF line endings |
-| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); optional secret `BRIDGE_APP_PRIVATE_KEY` (merges with the bridge App's token so push runs start on `main`); output `merged`; drafts and PRs touching `.github/workflows/` are left to Kade |
+| `.github/workflows/auto-merge.yml` | Reusable: called by `app` and `core`; merges a green `claude/*` PR into `main`; optional inputs `require` (checks) and `protected` (paths); optional secret `BRIDGE_APP_PRIVATE_KEY` (merges with the bridge App's token so push runs start on `main`); output `merged`; drafts and PRs touching `.github/workflows/` are left to Kade; a caller with `on: schedule` also gets the `sweep` job (every green, up-to-date `claude/*` PR) |
+| `.github/workflows/agent-merge-guard.yml` | Reusable: the check "agent merge guard" (always reports; for a ruleset); caller triggers `pull_request` and `merge_group`, no `paths:`; optional inputs `runs-on`, `protected` |
 | `.github/workflows/main-red.yml` | Reusable: called from a `workflow_run` on `main`; opens, updates and closes one `main-red` issue per workflow that fails on `main` |
 | `.github/workflows/main-red-caller.yml` | Runs `main-red.yml` here on `workflow_run` of this repo's check workflows on `main` (by name; add a workflow's name when it gains a push or schedule trigger) |
 | `.github/workflows/test.yml` | Unit tests on push and PR |
