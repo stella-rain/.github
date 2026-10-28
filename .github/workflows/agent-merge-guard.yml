@@ -1,0 +1,74 @@
+# Reusable: the agent merge guard, a check that always reports. It fails a pull request that
+# is a draft or changes a protected path (.github/workflows/, .claude/rules/, docs/adr/, the
+# root CLAUDE.md and AGENTS.md, and the caller's `protected` input) unless the label `kade-ok`
+# is set, and passes on `merge_group`. A ruleset requires it, so an agent's pull request
+# cannot merge into those paths without Kade.
+# The caller triggers it on
+#   pull_request: types [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+#   merge_group: types [checks_requested]
+# with no `paths:` filter (a skipped check never reports). The check reads as
+# `<caller job id> / agent merge guard`. Draft, labels and the file list are read from the API
+# at run time, so a re-run sees a label set after the PR was opened. Only people with triage or
+# write access can set `kade-ok`. Prints paths and label names only, never titles.
+name: Agent merge guard (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
+      protected:
+        description: >
+          Paths left to Kade besides the built-in ones, one per line; a path ending in /
+          is a directory (default none)
+        type: string
+        required: false
+        default: ""
+
+permissions: {}
+
+jobs:
+  guard:
+    name: agent merge guard
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out the guard script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .bridge
+          persist-credentials: false
+
+      - name: Check the pull request
+        env:
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PROTECTED: ${{ inputs.protected }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = merge_group ]; then
+            python3 .bridge/scripts/merge_guard.py --event merge_group
+            exit 0
+          fi
+          gh api "repos/$REPO/pulls/$PR" --jq '{draft, changed_files, labels: [.labels[].name]}' > "$RUNNER_TEMP/pr.json"
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
+          status=0
+          python3 .bridge/scripts/merge_guard.py --event "$EVENT" --protect "$PROTECTED" \
+            --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
+            > "$RUNNER_TEMP/verdict.txt" 2> "$RUNNER_TEMP/reasons.txt" || status=$?
+          echo "agent merge guard: $(cat "$RUNNER_TEMP/verdict.txt")" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s "$RUNNER_TEMP/reasons.txt" ]; then
+            sed 's/^/- /' "$RUNNER_TEMP/reasons.txt" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
