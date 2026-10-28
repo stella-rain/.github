@@ -303,6 +303,13 @@ class CliCase(unittest.TestCase):
         self.assertEqual(self.cli("checks-passed", "5", "--ignore-prefix", "a", stdin=bad).returncode, 0)
         self.assertNotEqual(self.cli("checks-passed", "5", "--require-any", stdin='{"check_runs": []}').returncode, 0)
 
+    def test_a_flag_never_takes_the_next_flag_as_its_value(self):
+        runs = '{"check_runs": []}'
+        for args in (("--ignore", "--require-any"), ("--ignore-prefix",), ("--ignore", "")):
+            with self.subTest(args=args):
+                r = self.cli("checks-passed", "5", *args, stdin=runs)
+                self.assertEqual(r.returncode, 2, r.stderr)
+
     def test_an_unknown_command_is_a_usage_error(self):
         self.assertEqual(self.cli("nope").returncode, 2)
         self.assertEqual(self.cli().returncode, 2)

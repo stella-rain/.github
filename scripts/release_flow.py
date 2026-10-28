@@ -56,7 +56,6 @@ BUILTIN_CHECKS = (
     "tag and GitHub release",
     "candidate branch unchanged",
 )
-PASSED = {"success", "skipped", "neutral"}
 FAILED = {"failure", "timed_out", "cancelled", "action_required", "stale", "startup_failure"}
 SUMS = "SHA256SUMS"
 NOTES_FILE = "RELEASE_NOTES.md"
@@ -273,9 +272,15 @@ def notes(rc, commit, previous, log_lines):
 
 
 def _flag_values(args, flag):
-    values = [args[i + 1] for i, a in enumerate(args) if a == flag and i + 1 < len(args)]
-    if sum(1 for a in args if a == flag) != len(values):
-        raise UsageError(f"{flag} wants a value")
+    values = []
+    i = 0
+    while i < len(args):
+        if args[i] == flag:
+            if i + 1 >= len(args) or not args[i + 1] or args[i + 1].startswith("--"):
+                raise UsageError(f"{flag} wants a value")
+            values.append(args[i + 1])
+            i += 1
+        i += 1
     return values
 
 

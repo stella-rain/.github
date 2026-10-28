@@ -225,7 +225,7 @@ jobs:
             while IFS= read -r path; do
               if [ -z "$path" ]; then continue; fi
               case "$path" in
-                /* | *..*) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
+                /* | ../* | */../* | */.. | ..) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
               esac
               files+=("$path")
             done <<<"$STAMP_FILES"
@@ -330,7 +330,7 @@ jobs:
             while IFS= read -r path; do
               if [ -z "$path" ]; then continue; fi
               case "$path" in
-                /* | *..*) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
+                /* | ../* | */../* | */.. | ..) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
               esac
               base64 -w0 < "stamp/$path" > "$RUNNER_TEMP/blob.b64"
               blob=$(jq -n --rawfile content "$RUNNER_TEMP/blob.b64" '{content: $content, encoding: "base64"}' \
