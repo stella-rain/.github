@@ -252,19 +252,21 @@ jobs:
           failed=0
           while read -r number sha; do
             [ -n "$number" ] || continue
-            branch=$(GH_TOKEN="$READ_TOKEN" gh pr view "$number" --repo "$REPO" --json headRefName --jq .headRefName)
-            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$sha" > "$RUNNER_TEMP/compare.json"
+            # A read that fails for one PR (closed or deleted since the list) skips it, not the sweep.
+            skip() { echo "PR #$number: could not read it; continuing"; failed=1; }
+            branch=$(GH_TOKEN="$READ_TOKEN" gh pr view "$number" --repo "$REPO" --json headRefName --jq .headRefName) || { skip; continue; }
+            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$sha" > "$RUNNER_TEMP/compare.json" || { skip; continue; }
             if [ "$(python3 .bridge/scripts/auto_merge_sweep.py up-to-date "$RUNNER_TEMP/compare.json")" != yes ]; then
               echo "#$number behind main; skipped" | tee -a "$GITHUB_STEP_SUMMARY"
               continue
             fi
             GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" \
-              --jq '.check_runs[] | {name, status, conclusion}' | jq -s . > "$RUNNER_TEMP/check-runs.json"
+              --jq '.check_runs[] | {name, status, conclusion}' | jq -s . > "$RUNNER_TEMP/check-runs.json" || { skip; continue; }
             GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/commits/$sha/status" \
-              --jq '{state, total_count}' > "$RUNNER_TEMP/status.json"
-            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
+              --jq '{state, total_count}' > "$RUNNER_TEMP/status.json" || { skip; continue; }
+            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json" || { skip; continue; }
             GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
-              --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
+              --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json" || { skip; continue; }
             verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
                         --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
                         "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
