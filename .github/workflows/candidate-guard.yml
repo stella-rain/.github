@@ -1,0 +1,44 @@
+# Candidate guard (the release-flow skill). An rc/* branch is made only by the candidate reusable
+# (release-candidate.yml), with GITHUB_TOKEN, which starts no workflow: any push to one is someone
+# else's, and it is deleted (Promote checks the head against the tag anyway). A deletion is
+# ignored, and the workflows' own deletions start no workflow either. It checks nothing out, so
+# it runs none of the repository's code.
+# Reusable: the caller adds a workflow with
+#   on: { push: { branches: ["rc/**"] } }
+#   permissions: {}
+#   jobs: { guard: { permissions: { contents: write }, uses: stella-rain/.github/.github/workflows/candidate-guard.yml@main } }
+# The caller's job needs `contents: write` (a called workflow cannot hold more than its caller
+# grants). `runs-on` lets a private caller pick its own runner; public callers never pass it (a
+# self-hosted runner never runs a public repository's jobs), and by default it is ubuntu-latest.
+# The job name is one of the names `checks-passed` leaves out (scripts/release_flow.py).
+name: Candidate guard
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
+
+permissions: {}
+
+jobs:
+  guard:
+    name: candidate branch unchanged
+    if: ${{ !github.event.deleted }}
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: write  # deleting a branch that broke the rule
+    steps:
+      - name: Delete a pushed rc branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "::error::$GITHUB_REF_NAME is made only by the Candidate workflow, never pushed; it is deleted"
+          gh api -X DELETE "repos/$REPO/git/refs/heads/$GITHUB_REF_NAME" > /dev/null || true
+          exit 1
