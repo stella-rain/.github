@@ -1,0 +1,379 @@
+# Candidate (the release-flow skill). Kade runs the caller's workflow on main (the default branch
+# of the Actions dropdown); the commit is the run's GITHUB_SHA, fixed when he clicks, and a push
+# to main during the run changes nothing. Called twice by the caller, with `phase`:
+#   check  refuses unless the run is on refs/heads/main, something came after the latest release
+#          and the commit is not already a candidate, the caller's extra refusals pass (check-command),
+#          and no check run on the commit failed; works out the release (the version that
+#          version-command prints is a floor: above every final tag it is the release, else the
+#          latest final tag's next patch), the rc tag, the superseded rc branches and the notes;
+#          when the release is not the version, runs stamp-command and stages stamp-files as a
+#          tree, which the caller's gates then test (artifact release-stamp)
+#   tag    after the caller's gates: makes the release commit when there was a stamp (a child of
+#          the main commit, refused unless its tree is the tested one), tags the commit v<final>-rc.N
+#          (annotated), makes a GitHub prerelease with the gates' files and SHA256SUMS, makes the
+#          branch rc/<rc tag> for Promote (release-promote.yml) to run from, and deletes the
+#          version's lower rc branches
+# The tag phase has no checkout of the caller, so it runs none of the caller's code. The logic is
+# scripts/release_flow.py of this repository's main, checked out to .release-flow.
+# Reusable: the caller adds a workflow with
+#   on: workflow_dispatch
+#   permissions: {}
+#   concurrency: { group: release, cancel-in-progress: false }   # stays in the caller: a group here would block it
+#   jobs:
+#     plan:     { permissions: { contents: read, checks: read }, uses: .../release-candidate.yml@main, with: { phase: check, ... } }
+#     <gates>:  { needs: plan, ... }   # build and test; upload the files to release as artifacts named by assets-artifact
+#     release:  { needs: [plan, <gates>], permissions: { contents: write }, uses: .../release-candidate.yml@main,
+#                 with: { phase: tag, plan: "${{ toJSON(needs.plan.outputs) }}", ... } }
+# A called workflow cannot hold more than its caller grants, so the caller's jobs grant what the
+# phase needs (check: contents read, checks read; tag: contents write). A `phase` other than
+# check or tag runs no job. A final tag that is not v<version> needs stamp-command and
+# stamp-files, else check refuses (fail closed); stamp files are regular, non-executable files
+# at repository-relative paths. The gates' check runs are reported as `<caller job> / <job>`: name
+# them in ignore-checks, since a gate that runs on the commit is not that commit's CI.
+# Inputs, all optional (a phase fails fast when one it needs is empty):
+#   phase              check or tag
+#   runs-on            the runner as JSON (default "ubuntu-latest"); public callers never pass it
+#   version-command    check: run at the checkout root; prints the version X.Y.Z (the floor)
+#   check-command      check: extra refusals; a non-zero exit refuses
+#   stamp-command      check: writes $FINAL_VERSION (X.Y.Z) into the tree; env FINAL_VERSION, FINAL_TAG
+#   stamp-files        check, tag: the paths stamp-command changes, one per line
+#   ignore-checks      check: check-run names to leave out, one per line; a trailing * makes a prefix
+#   require-check-run  check: refuse when the commit has no check run to count (default false)
+#   plan               tag: ${{ toJSON(needs.<check job>.outputs) }}
+#   assets-artifact    tag: the pattern of the artifacts the gates uploaded (default release-assets)
+#   assets-glob        tag: which files inside them are release assets (default *); a file
+#                      RELEASE_NOTES.md among them replaces the default notes and is not an asset
+# Outputs of check: version, final, rc, superseded, stamped, tree, previous, notes (base64 of the
+# default notes); of tag: commit.
+name: Release candidate
+
+on:
+  workflow_call:
+    inputs:
+      phase:
+        description: check or tag
+        type: string
+        required: false
+        default: ''
+      runs-on:
+        description: The runner as JSON, a label or a list of labels (default "ubuntu-latest")
+        type: string
+        required: false
+        default: '"ubuntu-latest"'
+      version-command:
+        description: A command that prints the version X.Y.Z at the checkout root
+        type: string
+        required: false
+        default: ''
+      check-command:
+        description: Extra refusals; a non-zero exit refuses
+        type: string
+        required: false
+        default: ''
+      stamp-command:
+        description: A command that writes $FINAL_VERSION into the tree (env FINAL_VERSION, FINAL_TAG)
+        type: string
+        required: false
+        default: ''
+      stamp-files:
+        description: The paths the stamp command changes, one per line
+        type: string
+        required: false
+        default: ''
+      ignore-checks:
+        description: Check-run names to leave out, one per line; a trailing * makes a prefix
+        type: string
+        required: false
+        default: ''
+      require-check-run:
+        description: Refuse when the commit has no check run to count
+        type: boolean
+        required: false
+        default: false
+      plan:
+        description: The outputs of the check phase, as toJSON(needs.<check job>.outputs)
+        type: string
+        required: false
+        default: ''
+      assets-artifact:
+        description: The pattern of the artifacts the gates uploaded
+        type: string
+        required: false
+        default: release-assets
+      assets-glob:
+        description: Which files inside those artifacts are release assets
+        type: string
+        required: false
+        default: '*'
+    outputs:
+      version:
+        description: The release version X.Y.Z
+        value: ${{ jobs.check.outputs.version }}
+      final:
+        description: The final tag, vX.Y.Z
+        value: ${{ jobs.check.outputs.final }}
+      rc:
+        description: The candidate tag, vX.Y.Z-rc.N
+        value: ${{ jobs.check.outputs.rc }}
+      superseded:
+        description: The lower rc branches the tag phase deletes
+        value: ${{ jobs.check.outputs.superseded }}
+      stamped:
+        description: true when a release commit with a stamp is made
+        value: ${{ jobs.check.outputs.stamped }}
+      tree:
+        description: The staged tree of the stamped files
+        value: ${{ jobs.check.outputs.tree }}
+      previous:
+        description: The latest final tag, or empty
+        value: ${{ jobs.check.outputs.previous }}
+      notes:
+        description: The default release notes, base64
+        value: ${{ jobs.check.outputs.notes }}
+      commit:
+        description: The commit the candidate tag points at
+        value: ${{ jobs.tag.outputs.commit }}
+
+permissions: {}
+
+jobs:
+  check:
+    name: check the candidate
+    if: inputs.phase == 'check'
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read  # the check runs on the commit
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      final: ${{ steps.plan.outputs.final }}
+      rc: ${{ steps.plan.outputs.rc }}
+      superseded: ${{ steps.plan.outputs.superseded }}
+      stamped: ${{ steps.plan.outputs.stamped }}
+      tree: ${{ steps.plan.outputs.tree }}
+      previous: ${{ steps.plan.outputs.previous }}
+      notes: ${{ steps.plan.outputs.notes }}
+    steps:
+      - name: The inputs the check phase needs
+        env:
+          VERSION_COMMAND: ${{ inputs.version-command }}
+        run: |
+          if [ -z "$VERSION_COMMAND" ]; then
+            echo "::error::the version-command input is empty"
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the release script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .release-flow
+          persist-credentials: false
+      - name: The run is on main, the commit is new, and the release is worked out
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION_COMMAND: ${{ inputs.version-command }}
+          CHECK_COMMAND: ${{ inputs.check-command }}
+          STAMP_COMMAND: ${{ inputs.stamp-command }}
+          STAMP_FILES: ${{ inputs.stamp-files }}
+          IGNORE_CHECKS: ${{ inputs.ignore-checks }}
+          REQUIRE_CHECK_RUN: ${{ inputs.require-check-run }}
+        run: |
+          set -euo pipefail
+          rf() { python3 "$GITHUB_WORKSPACE/.release-flow/scripts/release_flow.py" "$@"; }
+          rf check-main "$GITHUB_REF"
+          rf check-new
+          if [ -n "$CHECK_COMMAND" ]; then
+            bash -c "$CHECK_COMMAND"
+          fi
+          args=()
+          while IFS= read -r name; do
+            if [ -z "$name" ]; then continue; fi
+            case "$name" in
+              *'*') args+=(--ignore-prefix "${name%\*}") ;;
+              *) args+=(--ignore "$name") ;;
+            esac
+          done <<<"$IGNORE_CHECKS"
+          if [ "$REQUIRE_CHECK_RUN" = true ]; then
+            args+=(--require-any)
+          fi
+          gh api --paginate "repos/$REPO/commits/$GITHUB_SHA/check-runs?per_page=100" --jq '.check_runs[]' \
+            | jq -s '{check_runs: .}' \
+            | rf checks-passed "$GITHUB_RUN_ID" ${args[@]+"${args[@]}"}
+          main_version=$(bash -c "$VERSION_COMMAND")
+          final=$(rf final "$main_version")
+          version=${final#v}
+          rc=$(rf rc "$final")
+          superseded=$(rf superseded "$rc")
+          previous=$(rf latest)
+          stamped=false
+          tree=
+          if [ "$version" != "$main_version" ]; then
+            # The version is at or below the latest release: stamp the next patch and stage that tree.
+            if [ -z "$STAMP_COMMAND" ] || [ -z "$STAMP_FILES" ]; then
+              echo "::error::the release is $final, not v$main_version, and the stamp-command or stamp-files input is empty"
+              exit 1
+            fi
+            files=()
+            while IFS= read -r path; do
+              if [ -z "$path" ]; then continue; fi
+              case "$path" in
+                /* | *..*) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
+              esac
+              files+=("$path")
+            done <<<"$STAMP_FILES"
+            FINAL_VERSION=$version FINAL_TAG=$final bash -c "$STAMP_COMMAND"
+            stamped=true
+            mkdir "$RUNNER_TEMP/stamp"
+            for path in "${files[@]}"; do
+              cp --parents -- "$path" "$RUNNER_TEMP/stamp/"
+            done
+            git add -- "${files[@]}"
+            tree=$(git write-tree)
+          fi
+          : > "$RUNNER_TEMP/log"
+          if [ -n "$previous" ]; then
+            git log --no-merges --format='%h %s' "$previous..$GITHUB_SHA" > "$RUNNER_TEMP/log"
+          fi
+          rf notes "$rc" "$GITHUB_SHA" "${previous:--}" "$RUNNER_TEMP/log" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "version=$version"
+            echo "final=$final"
+            echo "rc=$rc"
+            echo "superseded=$superseded"
+            echo "stamped=$stamped"
+            echo "tree=$tree"
+            echo "previous=$previous"
+            echo "notes=$(base64 -w0 "$RUNNER_TEMP/notes.md")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Hand the stamped files to the gates and the tag phase
+        if: steps.plan.outputs.stamped == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-stamp
+          path: ${{ runner.temp }}/stamp
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # No checkout of the caller: this job runs none of its code. The release script is this
+  # repository's, from main.
+  tag:
+    name: rc tag and prerelease
+    if: inputs.phase == 'tag'
+    runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    permissions:
+      contents: write  # the release commit, the rc tag, the prerelease and the rc branches
+    outputs:
+      commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: The inputs the tag phase needs
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: |
+          if [ -z "$PLAN" ]; then
+            echo "::error::the plan input is empty"
+            exit 1
+          fi
+      - name: Check out the release script
+        uses: actions/checkout@v7
+        with:
+          repository: stella-rain/.github
+          ref: main
+          path: .release-flow
+          persist-credentials: false
+      - name: Fetch the stamped files
+        if: fromJSON(inputs.plan).stamped == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: release-stamp
+          path: stamp
+      - name: Fetch the gates' files
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.assets-artifact }}
+          path: dist
+          merge-multiple: true
+      - name: Make the release commit if needed, the rc tag, the prerelease and the rc/ branch
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PLAN: ${{ inputs.plan }}
+          STAMP_FILES: ${{ inputs.stamp-files }}
+          ASSETS_GLOB: ${{ inputs.assets-glob }}
+        run: |
+          set -euo pipefail
+          rf() { python3 "$GITHUB_WORKSPACE/.release-flow/scripts/release_flow.py" "$@"; }
+          final=$(jq -r '.final // empty' <<<"$PLAN")
+          rc=$(jq -r '.rc // empty' <<<"$PLAN")
+          superseded=$(jq -r '.superseded // empty' <<<"$PLAN")
+          stamped=$(jq -r '.stamped // empty' <<<"$PLAN")
+          tree=$(jq -r '.tree // empty' <<<"$PLAN")
+          notes=$(jq -r '.notes // empty' <<<"$PLAN")
+          if [ -z "$final" ] || [ -z "$rc" ] || [ -z "$stamped" ]; then
+            echo "::error::the plan input lacks final, rc or stamped"
+            exit 1
+          fi
+          commit=$GITHUB_SHA
+          if [ "$stamped" = true ]; then
+            entries='[]'
+            while IFS= read -r path; do
+              if [ -z "$path" ]; then continue; fi
+              case "$path" in
+                /* | *..*) echo "::error::stamp-files holds '$path', which is not a path inside the repository"; exit 1 ;;
+              esac
+              base64 -w0 < "stamp/$path" > "$RUNNER_TEMP/blob.b64"
+              blob=$(jq -n --rawfile content "$RUNNER_TEMP/blob.b64" '{content: $content, encoding: "base64"}' \
+                     | gh api "repos/$REPO/git/blobs" --input - --jq .sha)
+              entries=$(jq -c --arg path "$path" --arg sha "$blob" \
+                          '. + [{path: $path, mode: "100644", type: "blob", sha: $sha}]' <<<"$entries")
+            done <<<"$STAMP_FILES"
+            base=$(gh api "repos/$REPO/git/commits/$GITHUB_SHA" --jq .tree.sha)
+            built=$(jq -n --arg base "$base" --argjson entries "$entries" '{base_tree: $base, tree: $entries}' \
+                    | gh api "repos/$REPO/git/trees" --input - --jq .sha)
+            if [ "$built" != "$tree" ]; then
+              echo "::error::the tree $built is not the tested $tree"
+              exit 1
+            fi
+            commit=$(jq -n --arg msg "Release $final" --arg tree "$built" --arg parent "$GITHUB_SHA" \
+                       '{message: $msg, tree: $tree, parents: [$parent]}' \
+                     | gh api "repos/$REPO/git/commits" --input - --jq .sha)
+          fi
+          mapfile -t files < <(rf assets dist "$ASSETS_GLOB")
+          rf sums dist "$ASSETS_GLOB"
+          paths=()
+          for f in "${files[@]}" SHA256SUMS; do
+            paths+=("dist/$f")
+          done
+          if [ -f dist/RELEASE_NOTES.md ]; then
+            cp dist/RELEASE_NOTES.md "$RUNNER_TEMP/notes.md"
+          else
+            base64 -d <<<"$notes" > "$RUNNER_TEMP/notes.md"
+          fi
+          # An annotated tag object, then its ref; `gh release create` alone would make a
+          # lightweight tag.
+          object=$(gh api "repos/$REPO/git/tags" -f tag="$rc" -f message="$rc" \
+                     -f object="$commit" -f type=commit --jq .sha)
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$rc" -f sha="$object" > /dev/null
+          gh release create "$rc" --repo "$REPO" --verify-tag --prerelease --title "$rc" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${paths[@]}"
+          gh api "repos/$REPO/git/refs" -f ref="refs/heads/rc/$rc" -f sha="$commit" > /dev/null
+          for b in $superseded; do
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$b" > /dev/null || echo "::warning::could not delete $b"
+          done
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          {
+            echo "Candidate $rc of $final at $commit (main at $GITHUB_SHA)."
+            if [ -n "$superseded" ]; then echo "Deleted the superseded $superseded."; fi
+            echo "Try it, then Actions > Promote > Run workflow > branch rc/$rc."
+          } >> "$GITHUB_STEP_SUMMARY"
