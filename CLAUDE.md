@@ -14,6 +14,7 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `scripts/branch_cleanup.py` | Which `claude/*` and `gate/*` branches to delete: a merged PR's branch still at its head, and a gate branch whose task has no branch or open PR left |
 | `scripts/gate_check.py` | gate-check verdict: the gates a PR's files need (from the caller's spec), each covered by a passing run on `gate/<name>/<task>` (app's ADR-REL-3) |
 | `scripts/repo_check.py` | No environment, key or keystore file is tracked, and no private key block, AWS access key ID or GitHub token in a text file; prints file, line and kind, never the value |
+| `scripts/release_flow.py` | The release flow's logic for the three release reusables: floor rule, rc tag and branches, "nothing to release / already a candidate", checks, `SHA256SUMS`, notes (the release-flow skill) |
 | `scripts/test_*.py` | Unit tests for the scripts |
 | `scripts/setup-project.sh` | One-time Project and label setup; needs Kade's `gh` login with the `project` scope |
 | `.github/workflows/project-sync.yml` | Reusable: called by `app` and `core` on issue events |
@@ -28,6 +29,9 @@ checks, and the default issue forms and pull request template. It holds no proje
 | `.github/workflows/delete-gate-branch.yml` | Reusable: a gate workflow's last job; deletes the run's `gate/*` branch under a lease, never failing the run |
 | `.github/workflows/actionlint.yml` | Reusable, and runs here: actionlint (with shellcheck) on PRs that touch `.github/workflows/`; a pinned, checksum-checked release |
 | `.github/workflows/repo-check.yml` | Reusable, and runs here: `repo_check.py` on every PR and push to `main`; called by `core`, `moderation` and the private `report-server` (optional `runs-on` input, as in `eol-check.yml`), never by `stage-template` |
+| `.github/workflows/release-candidate.yml` | Reusable: Candidate, called twice by the caller with `phase` (`check`, then `tag` after its gates); owns the release commit (`stamp-command`, `stamp-files`); to be called by `core`, `content` and `app` |
+| `.github/workflows/release-promote.yml` | Reusable: Promote on an `rc/` branch (check, then tag the same commit); to be called by `core`, `content` and `app` |
+| `.github/workflows/candidate-guard.yml` | Reusable: deletes a pushed `rc/**` branch; to be called by `core`, `content` and `app` |
 | `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | Defaults for repos without their own |
 
 ## Rules
