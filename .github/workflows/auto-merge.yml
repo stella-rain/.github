@@ -180,8 +180,10 @@ jobs:
             # One comment per head of main: the marker line says which.
             python3 .bridge/scripts/auto_merge_gate.py --behind-comment "$RUNNER_TEMP/compare.json" > "$RUNNER_TEMP/behind.md"
             marker=$(head -n 1 "$RUNNER_TEMP/behind.md")
-            if GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/issues/$number/comments" --jq '.[].body' \
-                 | grep -qF "$marker"; then
+            # Read into a file first: under pipefail, `grep -q` closing the pipe early would fail the read.
+            GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/issues/$number/comments" \
+              --jq '.[].body' > "$RUNNER_TEMP/comments.txt"
+            if grep -qF "$marker" "$RUNNER_TEMP/comments.txt"; then
               echo "PR #$number is behind main; already commented"
             else
               GH_TOKEN="$WRITE_TOKEN" gh pr comment "$number" --repo "$REPO" --body-file "$RUNNER_TEMP/behind.md"
