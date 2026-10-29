@@ -205,6 +205,74 @@ class NameLists(unittest.TestCase):
         self.assertEqual(gate.name_list(""), [])
 
 
+def compare(status=None, behind_by=0, base="0123456789abcdef0123456789abcdef01234567"):
+    data = {"behind_by": behind_by, "base": base}
+    if status is not None:
+        data["status"] = status
+    return data
+
+
+class UpToDate(unittest.TestCase):
+    def verdict(self, cmp, runs=None, **kw):
+        return gate.decide(runs if runs is not None else [run("eol")], NO_STATUSES,
+                           compare=cmp, **kw)
+
+    def test_identical_and_ahead_merge(self):
+        self.assertEqual(self.verdict(compare("identical")), "merge")
+        self.assertEqual(self.verdict(compare("ahead")), "merge")
+
+    def test_behind_and_diverged_are_behind(self):
+        self.assertEqual(self.verdict(compare("behind", 2)), "behind")
+        self.assertEqual(self.verdict(compare("diverged", 1)), "behind")
+
+    def test_missing_or_unknown_status_waits(self):
+        self.assertEqual(self.verdict({}), "wait")
+        self.assertEqual(self.verdict(compare("weird")), "wait")
+
+    def test_no_compare_is_todays_behaviour(self):
+        self.assertEqual(gate.decide([run("eol")], NO_STATUSES, compare=None), "merge")
+
+    def test_behind_with_failed_check_stops(self):
+        runs = [run("eol", conclusion="failure")]
+        self.assertEqual(self.verdict(compare("behind", 2), runs), "stop")
+
+    def test_behind_with_draft_or_protected_path_stops(self):
+        self.assertEqual(self.verdict(compare("behind", 2), pr=pr(draft=True),
+                                      files=[file("a.md")]), "stop")
+        self.assertEqual(self.verdict(compare("behind", 2), pr=pr(),
+                                      files=[file(".github/workflows/x.yml")]), "stop")
+
+    def test_behind_with_running_check_is_behind(self):
+        runs = [run("eol", status="in_progress", conclusion=None)]
+        self.assertEqual(self.verdict(compare("behind", 2), runs), "behind")
+
+    def test_ahead_with_running_check_waits_and_failed_stops(self):
+        running = [run("eol", status="in_progress", conclusion=None)]
+        self.assertEqual(self.verdict(compare("ahead"), running), "wait")
+        failed = [run("eol", conclusion="failure")]
+        self.assertEqual(self.verdict(compare("ahead"), failed), "stop")
+
+
+class BehindComment(unittest.TestCase):
+    def test_marker_is_first_line_with_twelve_chars(self):
+        text = gate.behind_comment(compare("behind", 2))
+        self.assertEqual(text.splitlines()[0],
+                         "<!-- auto-merge:behind:0123456789ab -->")
+
+    def test_text_holds_short_sha_and_count(self):
+        text = gate.behind_comment(compare("behind", 7))
+        self.assertIn("0123456", text)
+        self.assertIn("7 commit(s)", text)
+        self.assertIn("Auto-merge waits", text)
+
+    def test_marker_follows_main_head(self):
+        first = gate.behind_comment(compare("behind", 2)).splitlines()[0]
+        again = gate.behind_comment(compare("behind", 5)).splitlines()[0]
+        other = gate.behind_comment(compare("behind", 2, base="f" * 40)).splitlines()[0]
+        self.assertEqual(first, again)
+        self.assertNotEqual(first, other)
+
+
 class CommandLine(unittest.TestCase):
     def main(self, *args, pull=None, files=None, runs=None):
         with tempfile.TemporaryDirectory() as d:
@@ -270,6 +338,50 @@ class CommandLine(unittest.TestCase):
                                   "--require", "eol", "--pr", paths["pr"],
                                   paths["runs"], paths["status"]])
             self.assertEqual((code, out.getvalue().strip()), (0, "stop"))
+
+    def test_compare_behind_prints_behind(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "compare.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(compare("behind", 2), f)
+            self.assertEqual(self.main("--compare", path), (0, "behind"))
+
+    def test_behind_comment_prints_marker_then_text(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "compare.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(compare("behind", 2), f)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = gate.main(["auto_merge_gate.py", "--behind-comment", path])
+            lines = out.getvalue().splitlines()
+            self.assertEqual(code, 0)
+            self.assertEqual(lines[0], "<!-- auto-merge:behind:0123456789ab -->")
+            self.assertIn("behind main", out.getvalue())
+
+    def test_invalid_compare_json_fails_without_merge(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "compare.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("not json")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    code = gate.main(["auto_merge_gate.py", "--compare", path,
+                                      *self.paths(d)])
+                except Exception:
+                    code = 1
+            self.assertNotEqual(code, 0)
+            self.assertNotIn("merge", out.getvalue())
+
+    def paths(self, d):
+        out = []
+        for name, data in (("runs", [run("eol")]), ("status", NO_STATUSES)):
+            path = os.path.join(d, name)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            out.append(path)
+        return out
 
 
 if __name__ == "__main__":
