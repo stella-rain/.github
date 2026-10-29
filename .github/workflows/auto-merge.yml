@@ -24,6 +24,13 @@
 # which starts none, and the run's summary says so.
 # The output `merged` is `true` once this run merged the PR: a caller that needs a run on main
 # after a merge (to re-save a build cache, say) starts it in a job of its own.
+# A PR is merged only when its head commit contains main's head (the compare API says
+# `identical` or `ahead`), like GitHub's "require branches to be up to date". A branch behind
+# main is not merged and not updated (a push with GITHUB_TOKEN starts no runs, and it would race
+# the person pushing to the branch): it gets one comment per head of main, marked
+# `<!-- auto-merge:behind:<main sha> -->`, asking for main to be merged in; that push re-runs
+# the checks, and the next green run merges. main can still move between the compare and the
+# merge (seconds); --match-head-commit guards the PR head only, so only GitHub's own rule is atomic.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
@@ -161,10 +168,28 @@ jobs:
           GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
           GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
             --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
+          # The PR head must contain main's head; the status is `identical` or `ahead` then.
+          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$RUN_SHA?per_page=1" \
+            --jq '{status, ahead_by, behind_by, base: .base_commit.sha}' > "$RUNNER_TEMP/compare.json"
           verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
                       --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
+                      --compare "$RUNNER_TEMP/compare.json" \
                       "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
           echo "PR #$number at $RUN_SHA: $verdict"
+          if [ "$verdict" = behind ]; then
+            # One comment per head of main: the marker line says which.
+            python3 .bridge/scripts/auto_merge_gate.py --behind-comment "$RUNNER_TEMP/compare.json" > "$RUNNER_TEMP/behind.md"
+            marker=$(head -n 1 "$RUNNER_TEMP/behind.md")
+            if GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/issues/$number/comments" --jq '.[].body' \
+                 | grep -qF "$marker"; then
+              echo "PR #$number is behind main; already commented"
+            else
+              GH_TOKEN="$WRITE_TOKEN" gh pr comment "$number" --repo "$REPO" --body-file "$RUNNER_TEMP/behind.md"
+              echo "PR #$number is behind main; commented"
+            fi
+            echo "PR #$number is behind main; auto-merge waits for an update" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "$verdict" != merge ]; then exit 0; fi
           # --match-head-commit refuses the merge if a push landed since the checks were read.
           GH_TOKEN="$WRITE_TOKEN" gh pr merge "$number" --repo "$REPO" --merge --match-head-commit "$RUN_SHA"
