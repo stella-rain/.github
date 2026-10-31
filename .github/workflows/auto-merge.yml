@@ -36,7 +36,7 @@
 # says `stale` when the verdict would be `merge` otherwise. Only then the step sleeps and reads
 # the checks again, STALE_RETRIES times STALE_SLEEP seconds (6 x 20 s, inside the job's cap); a
 # PR still stale after that waits like any other, for a re-run of this run or for Kade. Other
-# verdicts (`wait` for a workflow still running, `behind`, `stop`, `merge`) never sleep.
+# verdicts (`wait` for a workflow still running, `behind`, `stop`, `merge`) go on at once.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
