@@ -31,6 +31,12 @@
 # `<!-- auto-merge:behind:<main sha> -->`, asking for main to be merged in; that push re-runs
 # the checks, and the next green run merges. main can still move between the compare and the
 # merge (seconds); --match-head-commit guards the PR head only, so only GitHub's own rule is atomic.
+# A check run the Checks API still shows as pending, although its check suite is the one of the
+# workflow run that started this run (a completed run has no running job), is `stale`: the gate
+# says `stale` when the verdict would be `merge` otherwise. Only then the step sleeps and reads
+# the checks again, STALE_RETRIES times STALE_SLEEP seconds (6 x 20 s, inside the job's cap); a
+# PR still stale after that waits like any other, for a re-run of this run or for Kade. Other
+# verdicts (`wait` for a workflow still running, `behind`, `stop`, `merge`) go on at once.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
@@ -151,6 +157,9 @@ jobs:
           REQUIRE: ${{ inputs.require }}
           PROTECTED: ${{ inputs.protected }}
           PREFIXES: ${{ inputs.prefixes || 'claude/' }}
+          SUITE_ID: ${{ github.event.workflow_run.check_suite_id }}
+          STALE_RETRIES: "6"
+          STALE_SLEEP: "20"
         run: |
           set -euo pipefail
           pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
@@ -160,22 +169,33 @@ jobs:
           head=$(jq -r .headRefOid <<<"$pr")
           # The green run must be for the PR's latest commit, not an older push.
           if [ "$head" != "$RUN_SHA" ]; then echo "run is for $RUN_SHA, PR head is $head; waiting for its runs"; exit 0; fi
-          GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/commits/$RUN_SHA/check-runs?per_page=100" \
-            --jq '.check_runs[] | {name, status, conclusion}' | jq -s . > "$RUNNER_TEMP/check-runs.json"
-          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/commits/$RUN_SHA/status" \
-            --jq '{state, total_count}' > "$RUNNER_TEMP/status.json"
           # Drafts and PRs that change the workflows or a protected path go to Kade.
           GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq '{draft, changed_files}' > "$RUNNER_TEMP/pr.json"
           GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/pulls/$number/files?per_page=100" \
             --jq '.[] | {filename, previous_filename}' | jq -s . > "$RUNNER_TEMP/files.json"
-          # The PR head must contain main's head; the status is `identical` or `ahead` then.
-          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$RUN_SHA?per_page=1" \
-            --jq '{status, ahead_by, behind_by, base: .base_commit.sha}' > "$RUNNER_TEMP/compare.json"
-          verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
-                      --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
-                      --compare "$RUNNER_TEMP/compare.json" \
-                      "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
-          echo "PR #$number at $RUN_SHA: $verdict"
+          attempt=0
+          while :; do
+            GH_TOKEN="$READ_TOKEN" gh api --paginate "repos/$REPO/commits/$RUN_SHA/check-runs?per_page=100" \
+              --jq '.check_runs[] | {name, status, conclusion, check_suite_id: .check_suite.id}' | jq -s . > "$RUNNER_TEMP/check-runs.json"
+            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/commits/$RUN_SHA/status" \
+              --jq '{state, total_count}' > "$RUNNER_TEMP/status.json"
+            # The PR head must contain main's head; the status is `identical` or `ahead` then.
+            GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$RUN_SHA?per_page=1" \
+              --jq '{status, ahead_by, behind_by, base: .base_commit.sha}' > "$RUNNER_TEMP/compare.json"
+            verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
+                        --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
+                        --compare "$RUNNER_TEMP/compare.json" --completed-suite "$SUITE_ID" \
+                        "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")
+            echo "PR #$number at $RUN_SHA: $verdict"
+            if [ "$verdict" != stale ]; then break; fi
+            if [ "$attempt" -ge "$STALE_RETRIES" ]; then
+              verdict="wait"
+              echo "PR #$number: checks still in progress after $STALE_RETRIES re-reads; re-run this workflow run to retry" >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+            attempt=$((attempt + 1))
+            sleep "$STALE_SLEEP"
+          done
           if [ "$verdict" = behind ]; then
             # One comment per head of main: the marker line says which.
             python3 .bridge/scripts/auto_merge_gate.py --behind-comment "$RUNNER_TEMP/compare.json" > "$RUNNER_TEMP/behind.md"
