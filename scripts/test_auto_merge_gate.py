@@ -18,8 +18,11 @@ import auto_merge_gate as gate  # noqa: E402
 NO_STATUSES = {"state": "pending", "total_count": 0, "statuses": []}
 
 
-def run(name, status="completed", conclusion="success"):
-    return {"name": name, "status": status, "conclusion": conclusion}
+def run(name, status="completed", conclusion="success", suite=None):
+    data = {"name": name, "status": status, "conclusion": conclusion}
+    if suite is not None:
+        data["check_suite_id"] = suite
+    return data
 
 
 class CheckRuns(unittest.TestCase):
@@ -253,6 +256,67 @@ class UpToDate(unittest.TestCase):
         self.assertEqual(self.verdict(compare("ahead"), failed), "stop")
 
 
+def pending(name, suite, status="in_progress"):
+    return run(name, status, None, suite)
+
+
+class StaleChecks(unittest.TestCase):
+    def verdict(self, runs, completed_suites=None, combined=NO_STATUSES, **kw):
+        if completed_suites is not None:
+            kw["completed_suites"] = completed_suites
+        return gate.decide(runs, combined, **kw)
+
+    def stale_runs(self):
+        return [run("eol", suite=1), pending("rust checks", 1)]
+
+    def test_pending_check_of_a_finished_suite_is_stale(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, required=["rust checks"]), "stale")
+
+    def test_without_finished_suites_it_waits(self):
+        self.assertEqual(self.verdict(self.stale_runs(), (), required=["rust checks"]), "wait")
+        self.assertEqual(self.verdict(self.stale_runs(), required=["rust checks"]), "wait")
+
+    def test_another_suite_waits(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {2}, required=["rust checks"]), "wait")
+
+    def test_a_running_workflow_beside_a_stale_check_waits(self):
+        runs = self.stale_runs() + [pending("build", 2)]
+        self.assertEqual(self.verdict(runs, {1}), "wait")
+
+    def test_queued_check_of_a_finished_suite_is_stale(self):
+        runs = [run("eol", suite=1), pending("rust checks", 1, "queued")]
+        self.assertEqual(self.verdict(runs, {1}), "stale")
+
+    def test_failed_check_stops(self):
+        runs = self.stale_runs() + [run("lint", conclusion="failure", suite=1)]
+        self.assertEqual(self.verdict(runs, {1}), "stop")
+
+    def test_draft_stops(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, pr=pr(draft=True),
+                                      files=[file("a.md")]), "stop")
+
+    def test_behind_branch_is_behind(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, compare=compare("behind", 2)),
+                         "behind")
+
+    def test_pending_commit_status_waits(self):
+        combined = {"state": "pending", "total_count": 1}
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, combined), "wait")
+
+    def test_required_check_never_started_waits(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, required=["other"]), "wait")
+
+    def test_unclear_compare_waits(self):
+        self.assertEqual(self.verdict(self.stale_runs(), {1}, compare={}), "wait")
+
+    def test_all_green_merges(self):
+        runs = [run("eol", suite=1), run("rust checks", suite=1)]
+        self.assertEqual(self.verdict(runs, {1}), "merge")
+
+    def test_no_checks_waits(self):
+        self.assertEqual(self.verdict([], {1}), "wait")
+
+
 class BehindComment(unittest.TestCase):
     def test_marker_is_first_line_with_twelve_chars(self):
         text = gate.behind_comment(compare("behind", 2))
@@ -292,6 +356,18 @@ class CommandLine(unittest.TestCase):
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
                 code = gate.main(["auto_merge_gate.py", *args, *extra, runs, status])
             return code, out.getvalue().strip()
+
+    def test_completed_suite_makes_a_stale_case_stale(self):
+        runs = [run("eol", suite=1), pending("rust checks", 1)]
+        self.assertEqual(self.main("--completed-suite", "1", runs=runs), (0, "stale"))
+
+    def test_empty_or_missing_completed_suite_waits(self):
+        runs = [run("eol", suite=1), pending("rust checks", 1)]
+        self.assertEqual(self.main("--completed-suite", "", runs=runs), (0, "wait"))
+        self.assertEqual(self.main(runs=runs), (0, "wait"))
+
+    def test_bad_completed_suite_exits_2_without_a_verdict(self):
+        self.assertEqual(self.main("--completed-suite", "abc"), (2, ""))
 
     def test_without_options_merges(self):
         self.assertEqual(self.main(), (0, "merge"))
