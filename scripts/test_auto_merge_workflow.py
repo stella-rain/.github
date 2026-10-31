@@ -141,7 +141,7 @@ class Dispatch(unittest.TestCase):
         merge_line = next(i for i, l in enumerate(merge.splitlines())
                           if "gh pr merge" in l and "--merge" in l)
         self.assertIn('--match-head-commit "$RUN_SHA"', merge.splitlines()[merge_line])
-        done = max(i for i, l in enumerate(merge.splitlines()) if l.strip() == "done")
+        done = next(i for i, l in enumerate(merge.splitlines()) if l.strip() == "done")
         self.assertLess(done, merge_line)
 
     def test_later_steps_wait_for_the_target(self):
