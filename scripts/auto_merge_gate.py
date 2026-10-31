@@ -15,8 +15,8 @@ them) and prints one word:
   succeeded (not started yet, or skipped);
 - `stop`: something failed, or the PR is left to Kade: it is a draft, it changes a protected
   path (`.github/workflows/` and any `--protect` path), or its file list was not read whole.
-Precedence: `stop`, then `behind`, then `stale`, then `wait`, then `merge`. With --compare, a compare whose
-status is missing or unknown gives `wait`, never `merge`.
+Precedence: `stop`, then `behind`, then `stale`, then `wait`, then `merge`. With --compare, a
+compare whose status is missing or unknown gives `wait`, never `merge`.
 
 Usage: python3 auto_merge_gate.py [--require NAMES]... [--protect PATHS]...
            [--pr PR_JSON [--files FILES_JSON]] [--compare COMPARE_JSON]
