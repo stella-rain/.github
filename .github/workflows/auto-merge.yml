@@ -37,6 +37,13 @@
 # the checks again, STALE_RETRIES times STALE_SLEEP seconds (6 x 20 s, inside the job's cap); a
 # PR still stale after that waits like any other, for a re-run of this run or for Kade. Other
 # verdicts (`wait` for a workflow still running, `behind`, `stop`, `merge`) go on at once.
+# A dispatched run (`workflow_dispatch` in the caller, input `number`) is the manual retry for a
+# check that stays stale past the re-reads. Only an actor whose role on the repository is admin
+# or maintain gets in (anyone else, or a failed read of the role, ends the run with no merge).
+# It reads that PR instead of the `workflow_run` payload (the head branch, the head sha, and the
+# suites of every finished Actions run of that sha, hence `actions: read` in the job and in the
+# caller), then runs the same gate and the same merge on exactly that sha: same repository, open,
+# into main, a branch with a caller prefix, `--match-head-commit`. There is no way to skip a stop.
 # `runs-on` lets a private caller pick its own runner; here and by default, ubuntu-latest.
 name: Auto-merge (reusable)
 
@@ -84,28 +91,71 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs-on || '"ubuntu-latest"') }}
     timeout-minutes: 5
     if: >
-      github.event_name == 'workflow_run' &&
+      (github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.number != '')
     permissions:
       contents: write       # merge, delete the branch
       pull-requests: write  # merge
       issues: write         # close the PR's closing issues
       checks: read          # the head commit's check runs
       statuses: read        # the head commit's commit statuses
+      actions: read         # which runs of the head commit have finished
     outputs:
       merged: ${{ steps.merge.outputs.merged }}
     env:
       HAS_APP_KEY: ${{ secrets.BRIDGE_APP_PRIVATE_KEY != '' }}
     concurrency:
-      group: auto-merge-${{ github.repository }}-${{ github.event.workflow_run.head_branch }}
+      group: auto-merge-${{ github.repository }}-${{ github.event.workflow_run.head_branch || format('pr-{0}', github.event.inputs.number) }}
       cancel-in-progress: false
     steps:
+      - name: Resolve the pull request to merge
+        id: target
+        env:
+          READ_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          NUMBER: ${{ github.event.inputs.number }}
+          ACTOR: ${{ github.triggering_actor }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
+          RUN_SUITE: ${{ github.event.workflow_run.check_suite_id }}
+        run: |
+          set -euo pipefail
+          refuse() { echo "$1"; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ "$EVENT" = workflow_run ]; then
+            { echo "ok=true"; echo "branch=$RUN_BRANCH"; echo "sha=$RUN_HEAD"; echo "number="; echo "suites=$RUN_SUITE"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A dispatched run: one PR by number, started by an admin or a maintainer only.
+          if ! [[ "$NUMBER" =~ ^[1-9][0-9]*$ ]]; then refuse "the input number is not a pull request number"; fi
+          if ! role=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq .role_name); then
+            refuse "cannot read the role of the person who started this run; nothing is merged"
+          fi
+          case "$role" in
+            admin|maintain) ;;
+            *) refuse "the person who started this run is not an admin or maintainer; nothing is merged" ;;
+          esac
+          GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$NUMBER" \
+            --jq '{state, base: .base.ref, branch: .head.ref, sha: .head.sha, repo: .head.repo.full_name}' > "$RUNNER_TEMP/target.json"
+          if [ "$(jq -r .state "$RUNNER_TEMP/target.json")" != open ]; then refuse "PR #$NUMBER is not open"; fi
+          if [ "$(jq -r .base "$RUNNER_TEMP/target.json")" != main ]; then refuse "PR #$NUMBER is not into main"; fi
+          if [ "$(jq -r .repo "$RUNNER_TEMP/target.json")" != "$REPO" ]; then refuse "PR #$NUMBER is not from a branch of $REPO"; fi
+          branch=$(jq -r .branch "$RUNNER_TEMP/target.json")
+          sha=$(jq -r .sha "$RUNNER_TEMP/target.json")
+          # Every finished Actions run of the head commit: a check of its suite still shown pending is stale.
+          suites=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/actions/runs?head_sha=$sha&per_page=100" \
+                     --jq '[.workflow_runs[] | select(.status == "completed") | .check_suite_id] | join(",")')
+          echo "dispatched run for PR #$NUMBER: branch $branch at $sha"
+          { echo "ok=true"; echo "branch=$branch"; echo "sha=$sha"; echo "number=$NUMBER"; echo "suites=$suites"; } >> "$GITHUB_OUTPUT"
+
       - name: Check the branch prefix
         id: prefix
+        if: ${{ steps.target.outputs.ok == 'true' }}
         env:
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          BRANCH: ${{ steps.target.outputs.branch }}
           PREFIXES: ${{ inputs.prefixes || 'claude/' }}
         run: |
           set -euo pipefail
@@ -147,26 +197,33 @@ jobs:
 
       - name: Merge if every check is green
         id: merge
-        if: ${{ steps.prefix.outputs.match == 'true' }}
+        if: ${{ steps.target.outputs.ok == 'true' && steps.prefix.outputs.match == 'true' }}
         env:
           READ_TOKEN: ${{ github.token }}
           WRITE_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          RUN_SHA: ${{ steps.target.outputs.sha }}
+          NUMBER: ${{ steps.target.outputs.number }}
           REQUIRE: ${{ inputs.require }}
           PROTECTED: ${{ inputs.protected }}
           PREFIXES: ${{ inputs.prefixes || 'claude/' }}
-          SUITE_ID: ${{ github.event.workflow_run.check_suite_id }}
+          SUITE_ID: ${{ steps.target.outputs.suites }}
           STALE_RETRIES: "6"
           STALE_SLEEP: "20"
         run: |
           set -euo pipefail
-          pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
-                 --json number,headRefOid --jq '.[0]')
-          if [ -z "$pr" ] || [ "$pr" = "null" ]; then echo "no open PR from $BRANCH into main"; exit 0; fi
-          number=$(jq -r .number <<<"$pr")
-          head=$(jq -r .headRefOid <<<"$pr")
+          if [ -n "$NUMBER" ]; then
+            # A dispatched run: the number is given; read the head again, the run may have waited for its turn.
+            number=$NUMBER
+            head=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/pulls/$number" --jq .head.sha)
+          else
+            pr=$(GH_TOKEN="$READ_TOKEN" gh pr list --repo "$REPO" --head "$BRANCH" --base main --state open \
+                   --json number,headRefOid --jq '.[0]')
+            if [ -z "$pr" ] || [ "$pr" = "null" ]; then echo "no open PR from $BRANCH into main"; exit 0; fi
+            number=$(jq -r .number <<<"$pr")
+            head=$(jq -r .headRefOid <<<"$pr")
+          fi
           # The green run must be for the PR's latest commit, not an older push.
           if [ "$head" != "$RUN_SHA" ]; then echo "run is for $RUN_SHA, PR head is $head; waiting for its runs"; exit 0; fi
           # Drafts and PRs that change the workflows or a protected path go to Kade.

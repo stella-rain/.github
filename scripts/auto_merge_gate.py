@@ -20,7 +20,7 @@ compare whose status is missing or unknown gives `wait`, never `merge`.
 
 Usage: python3 auto_merge_gate.py [--require NAMES]... [--protect PATHS]...
            [--pr PR_JSON [--files FILES_JSON]] [--compare COMPARE_JSON]
-           [--completed-suite ID] CHECK_RUNS_JSON COMBINED_STATUS_JSON
+           [--completed-suite IDS] CHECK_RUNS_JSON COMBINED_STATUS_JSON
 CHECK_RUNS_JSON is a JSON array of check runs; COMBINED_STATUS_JSON is the object from
 `GET /repos/{repo}/commits/{sha}/status`. NAMES and PATHS are newline lists (the reusable
 workflow's `require` and `protected` inputs); blank lines are ignored. `--require` names check
@@ -29,8 +29,9 @@ skipped. `--protect` adds paths: one ending in `/` is a directory, any other a w
 PR_JSON holds `draft` and `changed_files` from `GET /repos/{repo}/pulls/{n}`; FILES_JSON is
 the array of `filename` and `previous_filename` from its files, all pages. With --pr, a
 missing --files stops. Prints check names, conclusions and paths only, never titles.
-ID is the integer `check_suite_id` of the workflow run that finished (empty: none, anything
-else exits 2); check runs carry it as `check_suite_id`. stderr gains `stale: <check names>`.
+IDS is the integer `check_suite_id` of the workflow run that finished, or a comma list of them
+(a dispatched run passes every finished run of the head commit); empty: none, anything else
+exits 2; check runs carry it as `check_suite_id`. stderr gains `stale: <check names>`.
 COMPARE_JSON holds `status`, `behind_by` and `base` (main's head) from
 `GET /repos/{repo}/compare/main...{sha}`; without --compare nothing about main is checked.
 
@@ -188,9 +189,9 @@ def main(argv):
     suites = ()
     if options.get("--completed-suite"):
         try:
-            suites = (int(options["--completed-suite"]),)
+            suites = tuple(int(part) for part in options["--completed-suite"].split(","))
         except ValueError:
-            print("--completed-suite takes an integer", file=sys.stderr)
+            print("--completed-suite takes integers separated by commas", file=sys.stderr)
             return 2
     compare = None
     if "--compare" in options:
