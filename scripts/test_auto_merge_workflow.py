@@ -129,8 +129,8 @@ class Dispatch(unittest.TestCase):
         self.assertIn("maintain", target)
         for role in ("write", "triage", "read"):
             self.assertNotRegex(target, rf"\b{role}\)")
-        self.assertIn('"$REPO"', target)
-        self.assertIn("main", target)
+        self.assertIn('!= "$REPO"', target)
+        self.assertIn('!= main ]', target)
 
     def test_merge_step_reads_the_resolved_sha(self):
         merge = step_text("Merge if every check is green")
