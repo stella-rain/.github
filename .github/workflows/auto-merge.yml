@@ -189,7 +189,7 @@ jobs:
             echo "PR #$number at $RUN_SHA: $verdict"
             if [ "$verdict" != stale ]; then break; fi
             if [ "$attempt" -ge "$STALE_RETRIES" ]; then
-              verdict=wait
+              verdict="wait"
               echo "PR #$number: checks still in progress after $STALE_RETRIES re-reads; re-run this workflow run to retry" >> "$GITHUB_STEP_SUMMARY"
               break
             fi
