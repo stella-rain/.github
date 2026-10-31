@@ -287,6 +287,14 @@ class StaleChecks(unittest.TestCase):
         runs = [run("eol", suite=1), pending("rust checks", 1, "queued")]
         self.assertEqual(self.verdict(runs, {1}), "stale")
 
+    def test_several_finished_suites(self):
+        runs = [run("eol", suite=1), pending("rust checks", 2)]
+        self.assertEqual(self.verdict(runs, (1, 2)), "stale")
+        self.assertEqual(self.verdict(runs + [pending("build", 3)], (1, 2)), "wait")
+        self.assertEqual(self.verdict(runs + [run("lint", conclusion="failure", suite=1)],
+                                      (1, 2)), "stop")
+        self.assertEqual(self.verdict(runs, (1, 2), compare=compare("behind", 2)), "behind")
+
     def test_failed_check_stops(self):
         runs = self.stale_runs() + [run("lint", conclusion="failure", suite=1)]
         self.assertEqual(self.verdict(runs, {1}), "stop")
@@ -365,6 +373,16 @@ class CommandLine(unittest.TestCase):
         runs = [run("eol", suite=1), pending("rust checks", 1)]
         self.assertEqual(self.main("--completed-suite", "", runs=runs), (0, "wait"))
         self.assertEqual(self.main(runs=runs), (0, "wait"))
+
+    def test_completed_suite_takes_a_comma_list(self):
+        runs = [run("eol", suite=1), pending("rust checks", 2)]
+        self.assertEqual(self.main("--completed-suite", "1,2", runs=runs), (0, "stale"))
+        self.assertEqual(self.main("--completed-suite", "1, 2", runs=runs), (0, "stale"))
+        self.assertEqual(self.main("--completed-suite", "1", runs=runs), (0, "wait"))
+
+    def test_bad_completed_suite_list_exits_2_without_a_verdict(self):
+        for value in ("1,abc", "1,", ","):
+            self.assertEqual(self.main("--completed-suite", value), (2, ""), value)
 
     def test_bad_completed_suite_exits_2_without_a_verdict(self):
         self.assertEqual(self.main("--completed-suite", "abc"), (2, ""))

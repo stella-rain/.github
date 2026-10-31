@@ -88,3 +88,72 @@ class Hardening(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def step_text(name):
+    """The text of the step called `name`, up to the next step."""
+    start = TEXT.index(f"- name: {name}")
+    nxt = TEXT.find("\n      - name:", start + 1)
+    return TEXT[start:] if nxt < 0 else TEXT[start:nxt]
+
+
+def job_if():
+    start = TEXT.index("    if: >")
+    return TEXT[start:TEXT.index("    permissions:", start)]
+
+
+class Dispatch(unittest.TestCase):
+    def test_mentions_the_dispatch_inputs(self):
+        for needle in ("workflow_dispatch", "github.event.inputs.number",
+                       "github.triggering_actor", "actions: read"):
+            self.assertIn(needle, TEXT)
+        first = next(l for l in TEXT.splitlines() if l.startswith("permissions:"))
+        self.assertEqual(first, "permissions: {}")
+
+    def test_job_if_keeps_workflow_run_conditions_and_adds_dispatch(self):
+        cond = job_if()
+        for needle in ("github.event.workflow_run.conclusion == 'success'",
+                       "github.event.workflow_run.event == 'pull_request'",
+                       "head_repository.full_name == github.repository",
+                       "workflow_dispatch", "github.event.inputs.number"):
+            self.assertIn(needle, cond)
+        self.assertIn("||", cond)
+
+    def test_target_step_comes_first_and_checks_the_actor_and_the_pr(self):
+        steps = re.findall(r"^      - name: (.*)$", TEXT, re.M)
+        self.assertTrue(steps[0].startswith("Resolve"), steps[0])
+        target = step_text(steps[0])
+        self.assertIn("id: target", target)
+        self.assertIn("collaborators/$ACTOR/permission", target)
+        self.assertRegex(target, r"admin\)|admin\|")
+        self.assertIn("maintain", target)
+        for role in ("write", "triage", "read"):
+            self.assertNotRegex(target, rf"\b{role}\)")
+        self.assertIn('"$REPO"', target)
+        self.assertIn("main", target)
+
+    def test_merge_step_reads_the_resolved_sha(self):
+        merge = step_text("Merge if every check is green")
+        self.assertIn("steps.target.outputs.sha", merge)
+        self.assertNotIn("github.event.workflow_run.head_sha", merge)
+        self.assertNotIn("github.event.workflow_run.check_suite_id", merge)
+        self.assertIn('--completed-suite "$SUITE_ID"', merge)
+        merge_line = next(i for i, l in enumerate(merge.splitlines())
+                          if "gh pr merge" in l and "--merge" in l)
+        self.assertIn('--match-head-commit "$RUN_SHA"', merge.splitlines()[merge_line])
+        done = max(i for i, l in enumerate(merge.splitlines()) if l.strip() == "done")
+        self.assertLess(done, merge_line)
+
+    def test_later_steps_wait_for_the_target(self):
+        for name in ("Check the branch prefix", "Merge if every check is green"):
+            self.assertIn("steps.target.outputs.ok", step_text(name))
+
+    def test_no_expression_inside_the_target_run_block(self):
+        target = step_text(re.findall(r"^      - name: (.*)$", TEXT, re.M)[0])
+        run_block = target[target.index("run: |"):]
+        self.assertNotIn("${{", run_block)
+
+    def test_concurrency_group_names_branch_and_dispatch_number(self):
+        group = next(l for l in TEXT.splitlines() if l.strip().startswith("group: auto-merge-"))
+        self.assertIn("head_branch", group)
+        self.assertIn("inputs.number", group)
