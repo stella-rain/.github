@@ -66,7 +66,7 @@ def numbered_adr_problems(rel, lines):
         for m in NUMBERED_ADR.finditer(line):
             problems.append(
                 f"{rel}:{n}: cites a numbered ADR ({m.group()}); cite its area ID "
-                "(app docs/adr/archive/README.md maps them)"
+                "(app docs/adr/replaced-set.md maps them)"
             )
     return problems
 
