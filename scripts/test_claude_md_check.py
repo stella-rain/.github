@@ -110,7 +110,7 @@ class Rules(RepoCase):
 
 
 class NumberedAdr(RepoCase):
-    MSG = "{}:{}: cites a numbered ADR ({}); cite its area ID (app docs/adr/archive/README.md maps them)"
+    MSG = "{}:{}: cites a numbered ADR ({}); cite its area ID (app docs/adr/replaced-set.md maps them)"
 
     def test_claude_md_match_fails(self):
         self.write("CLAUDE.md", "# ok\nSee ADR-044 for the bridge.\n")
