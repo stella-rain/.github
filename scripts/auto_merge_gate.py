@@ -12,20 +12,24 @@ them) and prints one word:
   pending in that (finished) check suite were green: a completed workflow has no running job,
   so the Checks API lags; the workflow re-reads a few times and never merges on `stale`;
 - `wait`: something is still running, nothing has reported yet, or a required check has not
-  succeeded (not started yet, or skipped);
+  succeeded (not started yet, or skipped); a check named in --optional that has not finished
+  does not count as running;
 - `stop`: something failed, or the PR is left to Kade: it is a draft, it changes a protected
   path (`.github/workflows/` and any `--protect` path), or its file list was not read whole.
 Precedence: `stop`, then `behind`, then `stale`, then `wait`, then `merge`. With --compare, a
 compare whose status is missing or unknown gives `wait`, never `merge`.
 
-Usage: python3 auto_merge_gate.py [--require NAMES]... [--protect PATHS]...
+Usage: python3 auto_merge_gate.py [--require NAMES]... [--optional NAMES]... [--protect PATHS]...
            [--pr PR_JSON [--files FILES_JSON]] [--compare COMPARE_JSON]
            [--completed-suite IDS] CHECK_RUNS_JSON COMBINED_STATUS_JSON
 CHECK_RUNS_JSON is a JSON array of check runs; COMBINED_STATUS_JSON is the object from
 `GET /repos/{repo}/commits/{sha}/status`. NAMES and PATHS are newline lists (the reusable
 workflow's `require` and `protected` inputs); blank lines are ignored. `--require` names check
 runs that must have succeeded, so a check whose workflow has not started yet cannot be
-skipped. `--protect` adds paths: one ending in `/` is a directory, any other a whole file.
+skipped. `--optional` names check runs that need not have finished: one still queued or running
+is ignored (it neither waits nor counts as succeeded), but one that finished and is not green
+still stops, and a name in both lists still has to have succeeded. Names match exactly; the
+commit statuses are not affected. `--protect` adds paths: one ending in `/` is a directory, any other a whole file.
 PR_JSON holds `draft` and `changed_files` from `GET /repos/{repo}/pulls/{n}`; FILES_JSON is
 the array of `filename` and `previous_filename` from its files, all pages. With --pr, a
 missing --files stops. Prints check names, conclusions and paths only, never titles.
@@ -106,24 +110,27 @@ def stale_checks(check_runs, completed_suites):
 
 
 def decide(check_runs, combined_status, required=(), pr=None, files=None, protected=(),
-           compare=None, completed_suites=()):
-    verdict = _decide(check_runs, combined_status, required, pr, files, protected, compare)
+           compare=None, completed_suites=(), optional=()):
+    verdict = _decide(check_runs, combined_status, required, pr, files, protected, compare,
+                      optional)
     stale = stale_checks(check_runs, completed_suites)
     if verdict == "wait" and stale:
         settled = [dict(c, status="completed", conclusion="success") if c in stale else c
                    for c in check_runs]
-        if _decide(settled, combined_status, required, pr, files, protected, compare) == "merge":
+        if _decide(settled, combined_status, required, pr, files, protected, compare,
+                   optional) == "merge":
             return "stale"
     return verdict
 
 
-def _decide(check_runs, combined_status, required, pr, files, protected, compare):
+def _decide(check_runs, combined_status, required, pr, files, protected, compare, optional=()):
     if pr is not None and left_to_kade(pr, files, protected):
         return "stop"
     waiting = False
     for check in check_runs:
         if check.get("status") != "completed":
-            waiting = True
+            if check.get("name") not in optional:
+                waiting = True
         elif check.get("conclusion") not in GREEN:
             return "stop"
     if combined_status.get("total_count", 0) > 0:
@@ -166,11 +173,13 @@ def main(argv):
         with open(argv[2], encoding="utf-8") as f:
             print(behind_comment(json.load(f)))
         return 0
-    required, protected, options, args = [], [], {}, argv[1:]
-    while len(args) >= 2 and args[0] in ("--require", "--protect", "--pr", "--files",
-                                         "--compare", "--completed-suite"):
+    required, optional, protected, options, args = [], [], [], {}, argv[1:]
+    while len(args) >= 2 and args[0] in ("--require", "--optional", "--protect", "--pr",
+                                         "--files", "--compare", "--completed-suite"):
         if args[0] == "--require":
             required += name_list(args[1])
+        elif args[0] == "--optional":
+            optional += name_list(args[1])
         elif args[0] == "--protect":
             protected += name_list(args[1])
         else:
@@ -206,12 +215,15 @@ def main(argv):
               file=sys.stderr)
     for name in required:
         print(f"required: {name}", file=sys.stderr)
+    for name in optional:
+        print(f"optional: {name}", file=sys.stderr)
     if pr is not None:
         print(f"left to Kade: {left_to_kade(pr, files, protected) or 'no'}", file=sys.stderr)
     stale = stale_checks(check_runs, suites)
     if stale:
         print("stale: " + ", ".join(str(c.get("name")) for c in stale), file=sys.stderr)
-    print(decide(check_runs, combined_status, required, pr, files, protected, compare, suites))
+    print(decide(check_runs, combined_status, required, pr, files, protected, compare, suites,
+                 optional))
     return 0
 
 if __name__ == "__main__":
