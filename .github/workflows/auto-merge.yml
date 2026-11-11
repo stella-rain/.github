@@ -10,6 +10,11 @@
 # the last to finish may be the only one started yet, and a check not started yet must not
 # count as green. Name only checks that run on every pull request into main; one that is
 # skipped or path-filtered never succeeds, and the PR then waits for Kade.
+# `optional` names check runs that need not have finished: one still queued or running is
+# ignored, so a slow or queued job (a self-hosted runner, say) does not hold the merge. A
+# finished optional check that is not green still stops. The PR can merge before an optional
+# check finishes; a failure after the merge is for `main-red` and the release checks, not for
+# this workflow. A name in both `require` and `optional` still has to have succeeded.
 # A merge made with GITHUB_TOKEN does not apply closing keywords (`Closes #N`), so after
 # merging it closes the PR's closing issues in the same repository itself.
 # `workflow_run` workflows are read from the caller's default branch, so a caller's
@@ -57,6 +62,11 @@ on:
         default: '"ubuntu-latest"'
       require:
         description: Check run names that must have succeeded, one per line (default none)
+        type: string
+        required: false
+        default: ""
+      optional:
+        description: Check run names that need not have finished, one per line (default none)
         type: string
         required: false
         default: ""
@@ -206,6 +216,7 @@ jobs:
           RUN_SHA: ${{ steps.target.outputs.sha }}
           NUMBER: ${{ steps.target.outputs.number }}
           REQUIRE: ${{ inputs.require }}
+          OPTIONAL: ${{ inputs.optional }}
           PROTECTED: ${{ inputs.protected }}
           PREFIXES: ${{ inputs.prefixes || 'claude/' }}
           SUITE_ID: ${{ steps.target.outputs.suites }}
@@ -239,7 +250,7 @@ jobs:
             # The PR head must contain main's head; the status is `identical` or `ahead` then.
             GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/compare/main...$RUN_SHA?per_page=1" \
               --jq '{status, ahead_by, behind_by, base: .base_commit.sha}' > "$RUNNER_TEMP/compare.json"
-            verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --protect "$PROTECTED" \
+            verdict=$(python3 .bridge/scripts/auto_merge_gate.py --require "$REQUIRE" --optional "$OPTIONAL" --protect "$PROTECTED" \
                         --pr "$RUNNER_TEMP/pr.json" --files "$RUNNER_TEMP/files.json" \
                         --compare "$RUNNER_TEMP/compare.json" --completed-suite "$SUITE_ID" \
                         "$RUNNER_TEMP/check-runs.json" "$RUNNER_TEMP/status.json")

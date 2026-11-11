@@ -345,6 +345,81 @@ class BehindComment(unittest.TestCase):
         self.assertNotEqual(first, other)
 
 
+Q = "queued"
+
+
+class OptionalChecks(unittest.TestCase):
+    """A check named by the caller's `optional` input need not have finished; a finished
+    failure still stops, and nothing else changes."""
+
+    def decide(self, runs, optional=("win",), **kw):
+        return gate.decide(runs, NO_STATUSES, optional=optional, **kw)
+
+    def test_unfinished_optional_is_ignored(self):
+        runs = [run("eol"), run("win", Q, None)]
+        self.assertEqual(self.decide(runs), "merge")
+        self.assertEqual(self.decide(runs, optional=()), "wait")
+
+    def test_in_progress_and_several_optional_are_ignored(self):
+        self.assertEqual(self.decide([run("eol"), run("win", "in_progress", None)]), "merge")
+        runs = [run("eol"), run("win", Q, None), run("mac", "in_progress", None)]
+        self.assertEqual(self.decide(runs, optional=["win", "mac"]), "merge")
+
+    def test_other_rules_still_apply_to_an_ignored_optional(self):
+        runs = [run("eol"), run("win", Q, None)]
+        self.assertEqual(self.decide(runs, pr=pr(draft=True), files=[file("a")]), "stop")
+        self.assertEqual(self.decide(runs, compare=compare("behind", 2)), "behind")
+        self.assertEqual(self.decide(runs + [run("eol2", conclusion="failure")]), "stop")
+
+    def test_finished_optional_failure_stops(self):
+        for conclusion in ("failure", "cancelled", "timed_out"):
+            with self.subTest(conclusion=conclusion):
+                self.assertEqual(self.decide([run("eol"), run("win", conclusion=conclusion)]),
+                                 "stop")
+
+    def test_failed_optional_beside_queued_other_stops(self):
+        runs = [run("win", conclusion="failure"), run("other", Q, None)]
+        self.assertEqual(self.decide(runs), "stop")
+
+    def test_finished_optional_is_ordinary(self):
+        self.assertEqual(self.decide([run("eol"), run("win")]), "merge")
+        self.assertEqual(self.decide([run("win", conclusion="skipped")]), "wait")
+
+    def test_non_optional_is_unchanged(self):
+        self.assertEqual(self.decide([run("eol"), run("other", Q, None)]), "wait")
+        self.assertEqual(self.decide([run("eol"), run("other", conclusion="failure")]), "stop")
+        runs = [run("eol"), run("win", Q, None), run("other", "in_progress", None)]
+        self.assertEqual(self.decide(runs), "wait")
+
+    def test_optional_is_not_required(self):
+        self.assertEqual(self.decide([run("eol"), run("win", Q, None)], required=["win"]), "wait")
+        self.assertEqual(self.decide([run("eol"), run("win")], required=["win"]), "merge")
+        self.assertEqual(self.decide([run("win", Q, None)]), "wait")
+
+    def test_a_name_matching_nothing_is_harmless_and_names_are_exact(self):
+        self.assertEqual(self.decide([run("eol")], optional=["nope"]), "merge")
+        self.assertEqual(self.decide([run("eol"), run("a", Q, None)], optional=["nope"]), "wait")
+        self.assertEqual(self.decide([run("eol"), run("a", conclusion="failure")],
+                                     optional=["nope"]), "stop")
+        self.assertEqual(self.decide([run("eol"), run("win", Q, None)], optional=["Win"]), "wait")
+
+    def test_an_optional_check_in_a_finished_suite_is_not_stale(self):
+        runs = [run("eol", suite=1), pending("win", 1)]
+        self.assertEqual(self.decide(runs, completed_suites={1}), "merge")
+
+    def test_command_line(self):
+        runs = [run("eol"), run("win", Q, None)]
+        cli = CommandLine("main")
+        self.assertEqual(cli.main("--optional", "win\n\n", runs=runs), (0, "merge"))
+        runs2 = runs + [run("mac", Q, None)]
+        self.assertEqual(cli.main("--optional", "win", "--optional", "mac", runs=runs2),
+                         (0, "merge"))
+        self.assertEqual(cli.main("--optional", "", runs=runs), (0, "wait"))
+        self.assertEqual(cli.main("--optional", "win",
+                                  runs=[run("eol"), run("win", conclusion="failure")]),
+                         (0, "stop"))
+
+
 class CommandLine(unittest.TestCase):
     def main(self, *args, pull=None, files=None, runs=None):
         with tempfile.TemporaryDirectory() as d:

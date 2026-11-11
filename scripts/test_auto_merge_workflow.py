@@ -157,3 +157,23 @@ class Dispatch(unittest.TestCase):
         group = next(l for l in TEXT.splitlines() if l.strip().startswith("group: auto-merge-"))
         self.assertIn("head_branch", group)
         self.assertIn("inputs.number", group)
+
+
+class OptionalInput(unittest.TestCase):
+    def test_input_defaults_to_empty(self):
+        m = re.search(r"^      optional:\n((?:        .*\n)+)", TEXT, re.M)
+        self.assertIsNotNone(m)
+        block = m.group(1)
+        self.assertIn("type: string", block)
+        self.assertIn("required: false", block)
+        self.assertIn('default: ""', block)
+
+    def test_passed_through_env_to_the_gate_inside_the_loop(self):
+        self.assertIn("OPTIONAL: ${{ inputs.optional }}", TEXT)
+        self.assertGreater(line_of('--optional "$OPTIONAL"'), line_of("while :"))
+        self.assertLess(line_of('--optional "$OPTIONAL"'), line_of("gh pr merge"))
+
+    def test_no_input_expression_in_a_run_block(self):
+        for line in TEXT.splitlines():
+            if "inputs.optional" in line:
+                self.assertTrue(line.strip().startswith("OPTIONAL:"), line)
