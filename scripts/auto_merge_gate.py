@@ -29,7 +29,8 @@ runs that must have succeeded, so a check whose workflow has not started yet can
 skipped. `--optional` names check runs that need not have finished: one still queued or running
 is ignored (it neither waits nor counts as succeeded), but one that finished and is not green
 still stops, and a name in both lists still has to have succeeded. Names match exactly; the
-commit statuses are not affected. `--protect` adds paths: one ending in `/` is a directory, any other a whole file.
+commit statuses are not affected.
+`--protect` adds paths: one ending in `/` is a directory, any other a whole file.
 PR_JSON holds `draft` and `changed_files` from `GET /repos/{repo}/pulls/{n}`; FILES_JSON is
 the array of `filename` and `previous_filename` from its files, all pages. With --pr, a
 missing --files stops. Prints check names, conclusions and paths only, never titles.
@@ -112,13 +113,13 @@ def stale_checks(check_runs, completed_suites):
 def decide(check_runs, combined_status, required=(), pr=None, files=None, protected=(),
            compare=None, completed_suites=(), optional=()):
     verdict = _decide(check_runs, combined_status, required, pr, files, protected, compare,
-                      optional)
+                      optional=optional)
     stale = stale_checks(check_runs, completed_suites)
     if verdict == "wait" and stale:
         settled = [dict(c, status="completed", conclusion="success") if c in stale else c
                    for c in check_runs]
         if _decide(settled, combined_status, required, pr, files, protected, compare,
-                   optional) == "merge":
+                   optional=optional) == "merge":
             return "stale"
     return verdict
 
@@ -223,7 +224,7 @@ def main(argv):
     if stale:
         print("stale: " + ", ".join(str(c.get("name")) for c in stale), file=sys.stderr)
     print(decide(check_runs, combined_status, required, pr, files, protected, compare, suites,
-                 optional))
+                 optional=optional))
     return 0
 
 if __name__ == "__main__":
